@@ -40,35 +40,6 @@
                                 />
                             </div>
                         </div>
-
-                        <div class="config-option" data-event-mouseover="set_cur_config_index(2)">
-                            <label class="config-option__title">Low Health Beeps</label>
-                            <div class="config-option__list">
-                                <input
-                                    type="radio"
-                                    data-event-blur="set_cur_config_index(-1)"
-                                    data-event-focus="set_cur_config_index(2)"
-                                    name="lhb"
-                                    data-checked="low_health_beeps_enabled"
-                                    value="1"
-                                    id="lhb_on"
-                                    style="nav-up: #bgm_volume_input"
-                                />
-                                <label class="config-option__tab-label" for="lhb_on">On</label>
-
-                                <input
-                                    type="radio"
-                                    data-event-blur="set_cur_config_index(-1)"
-                                    data-event-focus="set_cur_config_index(2)"
-                                    name="lhb"
-                                    data-checked="low_health_beeps_enabled"
-                                    value="0"
-                                    id="lhb_off"
-                                    style="nav-up: #bgm_volume_input"
-                                />
-                                <label class="config-option__tab-label" for="lhb_off">Off</label>
-                            </div>
-                        </div>
                 </div>
                 <!-- Descriptions -->
                 <div class="config__wrapper">
