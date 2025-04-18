@@ -324,9 +324,6 @@ RspUcodeFunc* get_rsp_microcode(const OSTask* task) {
     case M_AUDTASK:
         return aspMain;
 
-    //case M_NJPEGTASK:
-    //    return njpgdspMain;
-
     default:
         fprintf(stderr, "Unknown task: %" PRIu32 "\n", task->t.type);
         return nullptr;
@@ -345,7 +342,6 @@ std::vector<recomp::GameEntry> supported_games = {
         .mod_game_id = "mm",
         .save_type = recomp::SaveType::Flashram,
         .is_enabled = false,
-        //.decompression_routine = zelda64::decompress_mm,
         .has_compressed_code = false,
         .entrypoint_address = get_entrypoint_address(),
         .entrypoint = recomp_entrypoint,
@@ -687,7 +683,7 @@ int main(int argc, char** argv) {
     recomp::mods::scan_mods();
 
     printf("Found mods:\n");
-    for (const auto& mod : recomp::mods::get_mod_details("mm")) {
+    for (const auto& mod : recomp::mods::get_all_mod_details("mm")) {
         printf("  %s(%s)\n", mod.mod_id.c_str(), mod.version.to_string().c_str());
         if (!mod.authors.empty()) {
             printf("    Authors: %s", mod.authors[0].c_str());
