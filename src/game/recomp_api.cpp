@@ -107,9 +107,9 @@ extern "C" void recomp_get_autosave_enabled(uint8_t* rdram, recomp_context* ctx)
 }
 
 extern "C" void recomp_load_overlays(uint8_t * rdram, recomp_context * ctx) {
-    u32 rom = _arg<0, u32>(rdram, ctx);
-    PTR(void) ram = _arg<1, PTR(void)>(rdram, ctx);
-    u32 size = _arg<2, u32>(rdram, ctx);
+    u32 rom = ctx->r18;
+    PTR(void) ram = ctx->r16;
+    u32 size = ctx->r17;
 
     load_overlays(rom, ram, size);
 }
