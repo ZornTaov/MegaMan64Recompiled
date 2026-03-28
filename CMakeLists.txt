@@ -12,7 +12,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 # set(CMAKE_CXX_VISIBILITY_PRESET hidden)
 
 if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND CMAKE_CXX_SIMULATE_ID STREQUAL "MSVC")
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-everything /W4")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-everything -W4")
 endif()
 
 # Opt out of constexpr mutex constructor on windows to prevent vcredist issues
@@ -112,11 +112,20 @@ if(NOT DEFINED PATCHES_OBJCOPY)
     set(PATCHES_OBJCOPY llvm-objcopy)
 endif()
 
-add_custom_target(PatchesBin
-    COMMAND ${CMAKE_COMMAND} -E env CC=${PATCHES_C_COMPILER} LD=${PATCHES_LD} make
-    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/patches
-    BYPRODUCTS ${CMAKE_SOURCE_DIR}/patches/patches.elf
-)
+# Build patches.elf using native Windows build script (no bash/make dependency)
+if(WIN32)
+    add_custom_target(PatchesBin
+        COMMAND powershell -ExecutionPolicy Bypass -File ${CMAKE_SOURCE_DIR}/patches/build_patches.ps1
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/patches
+        BYPRODUCTS ${CMAKE_SOURCE_DIR}/patches/patches.elf
+    )
+else()
+    add_custom_target(PatchesBin
+        COMMAND ${CMAKE_COMMAND} -E env CC=${PATCHES_C_COMPILER} LD=${PATCHES_LD} bash -lc "make -f Makefile"
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/patches
+        BYPRODUCTS ${CMAKE_SOURCE_DIR}/patches/patches.elf
+    )
+endif()
 
 # Generate patches_bin.c from patches.bin
 add_custom_command(OUTPUT ${CMAKE_SOURCE_DIR}/RecompiledPatches/patches_bin.c

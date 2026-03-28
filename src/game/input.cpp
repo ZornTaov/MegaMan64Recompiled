@@ -133,8 +133,11 @@ bool sdl_event_filter(void* userdata, SDL_Event* event) {
             printf("Controller added: %d\n", controller_event->which);
             if (controller != nullptr) {
                 printf("  Instance ID: %d\n", SDL_JoystickInstanceID(SDL_GameControllerGetJoystick(controller)));
-                ControllerState& state = InputState.controller_states[SDL_JoystickInstanceID(SDL_GameControllerGetJoystick(controller))];
-                state.controller = controller;
+                {
+                    std::lock_guard lock{ InputState.cur_controllers_mutex };
+                    ControllerState& state = InputState.controller_states[SDL_JoystickInstanceID(SDL_GameControllerGetJoystick(controller))];
+                    state.controller = controller;
+                }
 
                 if (SDL_GameControllerHasSensor(controller, SDL_SensorType::SDL_SENSOR_GYRO) && SDL_GameControllerHasSensor(controller, SDL_SensorType::SDL_SENSOR_ACCEL)) {
                     SDL_GameControllerSetSensorEnabled(controller, SDL_SensorType::SDL_SENSOR_GYRO, SDL_TRUE);
@@ -149,7 +152,10 @@ bool sdl_event_filter(void* userdata, SDL_Event* event) {
         {
             SDL_ControllerDeviceEvent* controller_event = &event->cdevice;
             printf("Controller removed: %d\n", controller_event->which);
-            InputState.controller_states.erase(controller_event->which);
+            {
+                std::lock_guard lock{ InputState.cur_controllers_mutex };
+                InputState.controller_states.erase(controller_event->which);
+            }
         }
         break;
     case SDL_EventType::SDL_QUIT: {
@@ -241,10 +247,13 @@ bool sdl_event_filter(void* userdata, SDL_Event* event) {
             float x = event->csensor.data[0] / SDL_STANDARD_GRAVITY;
             float y = event->csensor.data[1] / SDL_STANDARD_GRAVITY;
             float z = event->csensor.data[2] / SDL_STANDARD_GRAVITY;
-            ControllerState& state = InputState.controller_states[event->csensor.which];
-            state.latest_accelerometer[0] = x;
-            state.latest_accelerometer[1] = y;
-            state.latest_accelerometer[2] = z;
+            {
+                std::lock_guard lock{ InputState.cur_controllers_mutex };
+                ControllerState& state = InputState.controller_states[event->csensor.which];
+                state.latest_accelerometer[0] = x;
+                state.latest_accelerometer[1] = y;
+                state.latest_accelerometer[2] = z;
+            }
         }
         else if (event->csensor.sensor == SDL_SensorType::SDL_SENSOR_GYRO) {
             // constexpr float gyro_threshold = 0.05f;
@@ -253,15 +262,18 @@ bool sdl_event_filter(void* userdata, SDL_Event* event) {
             float x = event->csensor.data[0] * rad_to_deg;
             float y = event->csensor.data[1] * rad_to_deg;
             float z = event->csensor.data[2] * rad_to_deg;
-            ControllerState& state = InputState.controller_states[event->csensor.which];
-            uint64_t cur_timestamp = event->csensor.timestamp;
-            uint32_t delta_ms = cur_timestamp - state.prev_gyro_timestamp;
-            state.motion.ProcessMotion(x, y, z, state.latest_accelerometer[0], state.latest_accelerometer[1], state.latest_accelerometer[2], delta_ms * 0.001f);
-            state.prev_gyro_timestamp = cur_timestamp;
+            {
+                std::lock_guard lock{ InputState.cur_controllers_mutex };
+                ControllerState& state = InputState.controller_states[event->csensor.which];
+                uint64_t cur_timestamp = event->csensor.timestamp;
+                uint32_t delta_ms = cur_timestamp - state.prev_gyro_timestamp;
+                state.motion.ProcessMotion(x, y, z, state.latest_accelerometer[0], state.latest_accelerometer[1], state.latest_accelerometer[2], delta_ms * 0.001f);
+                state.prev_gyro_timestamp = cur_timestamp;
 
-            float rot_x = 0.0f;
-            float rot_y = 0.0f;
-            state.motion.GetPlayerSpaceGyro(rot_x, rot_y);
+                float rot_x = 0.0f;
+                float rot_y = 0.0f;
+                state.motion.GetPlayerSpaceGyro(rot_x, rot_y);
+            }
 
             {
                 std::lock_guard lock{ InputState.pending_input_mutex };
@@ -585,7 +597,7 @@ float controller_axis_state(int32_t input_id, bool allow_suppression) {
 
         return std::clamp(ret, 0.0f, 1.0f);
     }
-    return false;
+    return 0.0f;
 }
 
 float recomp::get_input_analog(const recomp::InputField& field) {
@@ -606,7 +618,7 @@ float recomp::get_input_analog(const recomp::InputField& field) {
         // TODO mouse support
         return 0.0f;
     case InputType::None:
-        return false;
+        return 0.0f;
     }
 }
 

@@ -70,7 +70,7 @@ ultramodern::gfx_callbacks_t::gfx_data_t create_gfx() {
     SDL_SetHint(SDL_HINT_MOUSE_FOCUS_CLICKTHROUGH, "1");
     SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS, "1");
 
-    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMECONTROLLER) > 0) {
+    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMECONTROLLER) != 0) {
         exit_error("Failed to initialize SDL2: %s\n", SDL_GetError());
     }
 
@@ -91,6 +91,11 @@ ultramodern::renderer::WindowHandle create_window(ultramodern::gfx_callbacks_t::
 #endif
 
     window = SDL_CreateWindow("Mega Man 64: Recompiled", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 1600, 960,  flags);
+
+    if (window == nullptr) {
+        exit_error("Failed to create window: %s\n", SDL_GetError());
+    }
+
 #if defined(__linux__)
     zelda64::set_window_icon(window);
     if (ultramodern::renderer::get_graphics_config().wm_option == ultramodern::renderer::WindowMode::Fullscreen) { // TODO: Remove once RT64 gets native fullscreen support on Linux
@@ -99,10 +104,6 @@ ultramodern::renderer::WindowHandle create_window(ultramodern::gfx_callbacks_t::
         SDL_SetWindowFullscreen(window,0);
     }
 #endif
-
-    if (window == nullptr) {
-        exit_error("Failed to create window: %s\n", SDL_GetError());
-    }
 
     SDL_SysWMinfo wmInfo;
     SDL_VERSION(&wmInfo.version);
@@ -155,6 +156,12 @@ void queue_samples(int16_t* audio_data, size_t sample_count) {
         fprintf(stderr, "Warning: audio chunk too small (%zu samples, need > %zu), skipping\n",
                 sample_count, min_sample_count);
         return;
+    }
+
+    if (sample_count % input_channels != 0) {
+        fprintf(stderr, "Warning: audio chunk not aligned to channel count (%zu samples, %u channels), truncating\n",
+                sample_count, input_channels);
+        sample_count -= sample_count % input_channels;
     }
 
     // Make sure the swap buffer is large enough to hold the audio data, including any extra space needed for resampling.
@@ -345,7 +352,7 @@ bool preload_executable(PreloadContext& context) {
         fprintf(stderr, "Failed to create file mapping of executable!");
         CloseHandle(context.handle);
         context = {};
-        return EXIT_FAILURE;
+        return false;
     }
 
     context.view = MapViewOfFile(context.mapping_handle, FILE_MAP_READ, 0, 0, 0);
@@ -386,12 +393,14 @@ bool preload_executable(PreloadContext& context) {
 
     if (VirtualLock(context.view, context.size) == 0) {
         fprintf(stderr, "Failed to lock view of executable! (Error: %08lx)\n", GetLastError());
+        CloseHandle(process_handle);
         CloseHandle(context.mapping_handle);
         CloseHandle(context.handle);
         context = {};
         return false;
     }
     
+    CloseHandle(process_handle);
     return true;
 }
 
@@ -584,6 +593,12 @@ int main(int argc, char** argv) {
     );
 
     NFD_Quit();
+
+    if (audio_device != 0) {
+        SDL_CloseAudioDevice(audio_device);
+        audio_device = 0;
+    }
+    SDL_Quit();
 
     if (preloaded) {
         release_preload(preload_context);

@@ -23,8 +23,10 @@ void yaz0_decompress(std::span<const uint8_t> input, std::span<uint8_t> output) 
 
         while (layoutBitIndex < 8 && input_pos < input_size && output_pos < output_size) {
             if (layoutBits & 0x80) {
+                if (input_pos >= input_size) break;
                 output[output_pos++] = input[input_pos++];
             } else {
+                if (input_pos + 1 >= input_size) break;
                 int32_t firstByte = input[input_pos++];
                 int32_t secondByte = input[input_pos++];
                 uint32_t bytes = firstByte << 8 | secondByte;
@@ -34,6 +36,7 @@ void yaz0_decompress(std::span<const uint8_t> input, std::span<uint8_t> output) 
                 // Check how the group length is encoded
                 if ((firstByte & 0xF0) == 0) {
                     // 3 byte encoding, 0RRRNN
+                    if (input_pos >= input_size) break;
                     int32_t thirdByte = input[input_pos++];
                     length = thirdByte + 0x12;
                 } else {

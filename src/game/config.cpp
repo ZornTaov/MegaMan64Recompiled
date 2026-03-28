@@ -180,13 +180,16 @@ std::filesystem::path zelda64::get_app_folder_path() {
 
        const char *homedir;
 
-       if ((homedir = getenv("HOME")) == nullptr) {
-        #if defined(__linux__)
-           homedir = getpwuid(getuid())->pw_dir;
-        #elif defined(__APPLE__)
-            homedir = GetHomeDirectory();
-        #endif
-       }
+        if ((homedir = getenv("HOME")) == nullptr) {
+         #if defined(__linux__)
+            struct passwd* pw = getpwuid(getuid());
+            if (pw != nullptr) {
+                homedir = pw->pw_dir;
+            }
+         #elif defined(__APPLE__)
+             homedir = GetHomeDirectory();
+         #endif
+        }
 
        if (homedir != nullptr) {
            recomp_dir = std::filesystem::path{homedir} / (std::u8string{u8".config/"} + std::u8string{zelda64::program_id});

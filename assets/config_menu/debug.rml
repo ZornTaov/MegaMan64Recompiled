@@ -12,7 +12,7 @@
                             >
                                 <div>Warp</div>
                             </label>
-                            <div class="config-debug__option-split">
+                            <div class="config-debug__option-split" data-if="warp_available">
                                 <div class="config-debug__option-controls">
                                     <div class="config-debug__select-wrapper">
                                         <div class="config-debug__select-label"><div>Region</div></div>
@@ -40,6 +40,9 @@
                                         <svg src="icons/Arrow.svg" />
                                     </button>
                                 </div>
+                            </div>
+                            <div class="config-option__details" data-if="!warp_available">
+                                Mega Man 64 warp destinations have not been mapped yet, so debug warping is currently unavailable.
                             </div>
                         </div>
                         <div class="config-debug-option">
@@ -105,4 +108,3 @@
         </form>
     </body>
 </template>
-    

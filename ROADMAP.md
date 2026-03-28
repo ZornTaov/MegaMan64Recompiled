@@ -2,55 +2,124 @@
 
 This document tracks known issues, planned improvements, and future features for **Mega Man 64: Recompiled**.
 
-Items are grouped by priority (High → Low) and category.
+Items are grouped by priority (High -> Low) and category.
 
 ---
 
-## Bug Fixes
+## Recently Fixed (Audit 2026-03-27)
 
-| Priority | File | Description |
+The following issues were identified and fixed during a comprehensive codebase audit:
+
+| Severity | File | Fix |
+|----------|------|-----|
+| Critical | `src/main/main.cpp` | `SDL_Init()` check was `> 0` (never true); changed to `!= 0` so fatal SDL errors are caught. |
+| Critical | `src/main/main.cpp` | `preload_executable()` returned `EXIT_FAILURE` (1/true) on error path; changed to `false`. |
+| Critical | `src/game/input.cpp` | `controller_states` map modified from UI thread and read from game thread without a mutex. Wrapped all accesses in `cur_controllers_mutex`. |
+| Critical | `src/game/rom_decompression.cpp` | `yaz0_decompress()` could read past the end of the input buffer on malformed data. Added bounds checks before every multi-byte read. |
+| High | `src/main/main.cpp` | Window pointer used in `set_window_icon()`/`SDL_SetWindowFullscreen()` before null check. Moved null check before usage. |
+| High | `src/game/config.cpp` | `getpwuid()` result dereferenced without null check on Linux. Added null guard. |
+| High | `src/main/main.cpp` | `queue_samples()` did not validate `sample_count` was aligned to channel count. Added alignment check. |
+| Medium | `src/main/main.cpp` | `OpenProcess` handle leaked on all code paths. Added `CloseHandle()` on success and failure paths. |
+| Medium | `src/main/main.cpp` | Audio device and SDL never cleaned up on exit. Added `SDL_CloseAudioDevice()` and `SDL_Quit()`. |
+| Low | `src/game/input.cpp` | `return false` used in functions returning `float`. Changed to `return 0.0f`. |
+| High | `src/game/debug.cpp`, `src/game/scene_table.cpp`, `src/ui/ui_config.cpp` | Removed Majora's Mask placeholder warp data, guarded debug warps against invalid indices, and disabled the warp UI until Mega Man 64 destinations are mapped. |
+| High | `src/game/debug.cpp` | `pending_set_time` now uses `0xFFFFFFFF` as the "no pending" sentinel so valid encoded times don't collide with the reset value. |
+
+---
+
+## Phase 1: N64 Parity & Fidelity
+
+Goal: Ensure the recompiled version is behaviorally identical to the original N64 game.
+
+### 1A: Core Accuracy
+
+| Priority | Item | Description |
 |----------|------|-------------|
-| High | `src/main/main.cpp` | Add a UI error dialog (message box) inside `exit_error()` before exiting, so fatal errors are shown to the user instead of only printing to stderr. The existing `assert(false)` is intentional (debug break) and can remain. |
-| High | `src/game/quicksaving.cpp` | Quick-save/load is gated behind `#if 0` — the RDRAM snapshot mechanism needs synchronisation review and re-enabling. |
-| Medium | `src/ui/ui_renderer.cpp` | Font atlas is rebuilt from scratch on every UI reload; cache it to reduce hitching. |
-| Medium | `src/main/main.cpp` | `queue_samples()` asserts `sample_count > duplicated_input_frames * input_channels`; handle small chunks gracefully. |
-| Low | `src/game/controls.cpp` | `get_input_binding()` returns a reference to a `static` dummy field — callers that mutate it may cause unexpected behaviour. Return by value instead. |
+| High | Scene table accuracy | `src/game/scene_table.cpp` no longer ships Zelda placeholder data; populate it with Mega Man 64 stage/area data to re-enable debug warping. |
+| Medium | `recomp_powf` register access | `src/game/recomp_api.cpp:50` reads `ctx->f14.fl` directly instead of using `_arg<1, float>()`. Restore the commented-out accessor. |
+| Medium | RSP task handling | `get_rsp_microcode()` only handles `M_AUDTASK`. Verify no other RSP task types are used by MM64. |
 
----
+### 1B: Audio Parity
 
-## Error Handling & Robustness
-
-| Priority | File | Description |
+| Priority | Item | Description |
 |----------|------|-------------|
-| High | `src/main/main.cpp` | Surface RT64 / audio device setup failures to the user via a message-box before exiting. |
-| Medium | `src/game/config.cpp` | `load_config()` / `save_config()` now log failures to stderr; surface critical failures through the UI as well. |
-| Medium | `src/main/rt64_render_context.cpp` | Callers of `create_render_context()` should check `RT64RenderContext::valid()` and abort gracefully. |
-| Low | `src/game/input.cpp` | SDL controller open/close events are handled, but the first-open path does not log errors for `SDL_GameControllerOpen()` failures. |
+| High | Audio resampling quality | The `SDL_AudioCVT`-based resampler runs synchronously. Profile vs N64 output for fidelity; consider a higher-quality resampler if artifacts are audible. |
+| Medium | Volume ramping | Verify rumble and volume curves match N64 behavior. |
 
----
+### 1C: Save System
 
-## Code Quality & Clean-up
-
-| Priority | File | Description |
+| Priority | Item | Description |
 |----------|------|-------------|
-| Medium | `src/main/main.cpp` | Remove the block of commented-out `REGISTER_FUNC` calls (lines ~613–625) once the overlay export mechanism is confirmed working or removed. |
-| Medium | `src/main/main.cpp` | Move `get_game_thread_name()` out of `main.cpp` into a dedicated support file. |
-| Medium | `src/game/input.cpp` | Encapsulate the large `InputState` static struct into a proper class with documented thread-safety guarantees. |
-| Low | `src/main/main.cpp` | The `SetImageAsIcon()` helper (Linux only) should move to `src/main/support.cpp` to keep `main.cpp` focused on startup flow. |
-| Low | `src/main/register_patches.cpp` | File is effectively empty (patch registration is commented out); either re-enable or document why it is disabled. |
+| High | Flashram save/load | Verify existing Flashram save/load path works correctly for all MM64 save slots. |
+| High | Quicksave re-enable | `quicksaving.cpp` is gated behind `#if 0`. The `thread_local` context bug (L5) must be fixed before re-enabling: each thread gets its own `saved_context`, breaking cross-thread save/load. |
+| Medium | Save migration | Ensure saves from original N64 hardware can be imported. |
 
 ---
 
-## Missing Features & TODOs
+## Phase 2: Modern Graphics Enhancements
 
-| Priority | Feature | Notes |
-|----------|---------|-------|
-| High | Fullscreen toggle (Linux) | Currently implemented via a `SDL_SetWindowFullscreen` workaround. Remove once RT64 gains native fullscreen support on Linux. |
-| High | Mod management UI | All discovered mods are auto-enabled at startup. A proper mod-browser UI is needed. |
-| Medium | Mouse look | `// TODO mouse support` in `src/game/input.cpp` — mouse delta is computed but not hooked up to camera controls. |
-| Medium | Adjustable deadzone | `// TODO adjustable deadzone threshold` — expose radial deadzone in the controls settings menu. |
-| Medium | Preload executable (non-Windows) | `preload_executable()` is a no-op on Linux/macOS. Investigate `mlock()` / `posix_madvise(MADV_WILLNEED)` equivalents. |
-| Low | macOS status | Build is supported but less tested. Add macOS to CI once GitHub Actions runners are configured. |
+Goal: Leverage RT64 and native hardware for visually improved rendering while remaining faithful to the original art style.
+
+### 2A: RT64 Integration
+
+| Priority | Item | Description |
+|----------|------|-------------|
+| High | Renderer error reporting | `create_render_context()` logs to stderr on failure but continues. Surface GPU driver errors to the user via message box. |
+| High | Internal resolution scaling | Expose a configurable internal resolution multiplier (2x, 4x, 8x) for sharper rendering on high-DPI displays. |
+| Medium | MSAA / SSAA options | RT64 supports multi-sample anti-aliasing. Expose toggle and sample count in the graphics settings UI. |
+| Medium | Dynamic resolution | Investigate RT64's frame-pacing support for consistent performance on variable hardware. |
+
+### 2B: Texture & Visual Assets
+
+| Priority | Item | Description |
+|----------|------|-------------|
+| High | Texture pack loader UI | All mods are auto-enabled at startup. Build a proper in-game texture pack browser with enable/disable, preview, and reload. |
+| High | HD texture pack format | Document the `.rtz` mod container format and `rt64.json` content type API for community texture artists. |
+| Medium | Community texture packs | Create example HD texture packs demonstrating the pack format (e.g., UI elements, environment textures). |
+| Low | Sprite filtering options | Allow per-texture filtering mode (nearest vs linear) for preserving pixel art or smoothing 3D textures. |
+
+### 2C: Shader Enhancements
+
+| Priority | Item | Description |
+|----------|------|-------------|
+| Medium | Widescreen corrections | MM64 renders at 4:3. Fix HUD stretching, text positioning, and UI elements for widescreen aspect ratios. |
+| Medium | Fog density tuning | `patches/graphics.h` contains commented-out fog reduction code. Expose fog density as a configurable option. |
+| Low | Post-processing hooks | Investigate adding optional post-processing (bloom, color correction) via RT64's shader pipeline. |
+
+---
+
+## Phase 3: Quality of Life Improvements
+
+Goal: Modernize the user experience without altering the game's core gameplay.
+
+### 3A: Input & Controls
+
+| Priority | Item | Description |
+|----------|------|-------------|
+| High | Mouse look | Mouse delta is computed in `input.cpp` but not hooked up to camera controls. Implement true mouse aim. |
+| High | Controller hot-plug | Now thread-safe (C3 fix). Test and verify controller connect/disconnect during gameplay. |
+| Medium | Adjustable deadzone | `// TODO adjustable deadzone threshold` in `input.cpp`. Expose radial deadzone slider in controls settings. |
+| Medium | Input display overlay | Optional on-screen display showing current button/axis inputs for testing and streaming. |
+| Low | Per-input-type sensitivity | Separate sensitivity sliders for mouse, gyro, and right-analog aiming. |
+
+### 3B: Configuration & UI
+
+| Priority | Item | Description |
+|----------|------|-------------|
+| High | Config error surfacing | `load_config()`/`save_config()` failures are logged to stderr. Show critical config errors in the UI. |
+| Medium | Font atlas caching | `ui_renderer.cpp` rebuilds the font atlas on every UI reload. Cache to eliminate hitching. |
+| Medium | Config path caching | `get_app_folder_path()` calls `getenv()` on every invocation. Cache the result. |
+| Medium | Controller binding UI | Allow re-binding all N64 buttons per-port with visual feedback. |
+| Low | Multi-language support | Framework for community translation of UI strings. |
+
+### 3C: Platform & Performance
+
+| Priority | Item | Description |
+|----------|------|-------------|
+| High | Fullscreen toggle (Linux) | `SDL_SetWindowFullscreen` workaround in place. Remove once RT64 gains native fullscreen on Linux. |
+| Medium | Preload executable (non-Windows) | `preload_executable()` is a no-op on Linux/macOS. Implement via `mlock()` / `posix_madvise(MADV_WILLNEED)`. |
+| Medium | `InputState` encapsulation | Refactor the large static struct in `input.cpp` into a proper class with documented thread-safety guarantees. |
+| Low | macOS CI | Build is supported but less tested. Add macOS to CI via GitHub Actions. |
 
 ---
 
@@ -58,27 +127,21 @@ Items are grouped by priority (High → Low) and category.
 
 | Priority | Area | Description |
 |----------|------|-------------|
-| High | `yaz0_decompress()` | Add unit tests for valid data, truncated input, and malformed back-references to validate the new bounds checks. |
-| High | Config serialisation | Add unit tests for round-trip save/load of each config section, including missing keys and corrupt JSON. |
-| Medium | Input mapping | Add unit tests for `assign_mapping()` / `get_input_binding()` with edge-case indices. |
-| Medium | ROM validation | Add unit tests for `decompress_mm()` with wrong size, wrong header, and correct input. |
+| High | `yaz0_decompress()` | Unit tests for valid data, truncated input, and malformed back-references (validate the new bounds checks). |
+| High | Config serialisation | Round-trip save/load tests for each config section, including missing keys and corrupt JSON. |
+| Medium | Input mapping | Unit tests for `assign_mapping()` / `get_input_binding()` with edge-case indices. |
+| Medium | ROM validation | Unit tests for `decompress_mm()` with wrong size, wrong header, and correct input. |
+| Medium | Save system | Integration tests for Flashram save/load with known save data. |
 | Low | UI smoke tests | Investigate headless RmlUi rendering for automated UI regression testing. |
 
 ---
 
-## Performance
-
-| Priority | Area | Description |
-|----------|------|-------------|
-| Medium | Audio resampling | The `SDL_AudioCVT`-based resampler runs on the audio callback thread. Profile and consider replacing with a higher-quality async resampler. |
-| Low | Config path lookup | `get_app_folder_path()` calls `getenv()` on every invocation. Cache the result after first call. |
-
----
-
-## Documentation
+## Code Quality & Clean-up
 
 | Priority | Item | Description |
 |----------|------|-------------|
-| Medium | Architecture overview | Add a section to `README.md` (or a separate `ARCHITECTURE.md`) describing how the recompiler output, patches, overlays, and runtime fit together. |
-| Medium | Mod authoring guide | Document the `.rtz` texture pack format and the mod content type API. |
-| Low | Code comments | Add function-level doc-comments to all public API headers in `include/`. |
+| Medium | Remove dead code | Clean up commented-out `REGISTER_FUNC` calls, unused `njpgdspMain` reference, and empty `register_patches.cpp`. |
+| Medium | `ui_color_hack.cpp` vtable overwrite | `memcpy` over a `Rml::PropertyParserColour` vtable is fragile. Add a runtime layout check or find an upstream solution. |
+| Medium | `from_bytes_le` unaligned access | `ui_renderer.cpp` uses `reinterpret_cast` on potentially unaligned data. Use `memcpy` for portability. |
+| Low | `static_assert(false)` portability | `main.cpp:119` uses `static_assert(false && ...)` which may fail on strict C++11/14 modes. |
+| Low | Rename `zelda64` namespace | The `zelda64` namespace is a template artifact. Rename to `mm64` or `megaman64` for project identity. |

@@ -9,6 +9,7 @@
 #include "ultramodern/config.hpp"
 #include "ultramodern/ultramodern.hpp"
 #include "RmlUi/Core.h"
+#include <algorithm>
 
 ultramodern::renderer::GraphicsConfig new_options;
 Rml::DataModelHandle nav_help_model_handle;
@@ -480,8 +481,10 @@ struct DebugContext {
 	int set_time_hour = 12;
 	int set_time_minute = 0;
 	bool debug_enabled = false;
+	bool warp_available = false;
 
 	DebugContext() {
+		warp_available = !zelda64::game_warps.empty();
 		for (const auto& area : zelda64::game_warps) {
 			area_names.emplace_back(area.name);
 		}
@@ -490,11 +493,35 @@ struct DebugContext {
 
 	void update_warp_names() {
 		scene_names.clear();
-		for (const auto& scene : zelda64::game_warps[area_index].scenes) {
+		entrance_names.clear();
+
+		if (!warp_available) {
+			area_index = 0;
+			scene_index = 0;
+			entrance_index = 0;
+			return;
+		}
+
+		area_index = std::clamp(area_index, 0, static_cast<int>(zelda64::game_warps.size()) - 1);
+		const auto& scenes = zelda64::game_warps[area_index].scenes;
+		for (const auto& scene : scenes) {
 			scene_names.emplace_back(scene.name);
 		}
-		
-		entrance_names = zelda64::game_warps[area_index].scenes[scene_index].entrances;
+
+		if (scene_names.empty()) {
+			scene_index = 0;
+			entrance_index = 0;
+			return;
+		}
+
+		scene_index = std::clamp(scene_index, 0, static_cast<int>(scenes.size()) - 1);
+		entrance_names = scenes[scene_index].entrances;
+		if (entrance_names.empty()) {
+			entrance_index = 0;
+			return;
+		}
+
+		entrance_index = std::clamp(entrance_index, 0, static_cast<int>(entrance_names.size()) - 1);
 	}
 };
 
@@ -572,6 +599,9 @@ public:
 			
 		recompui::register_event(listener, "area_index_changed",
 			[](const std::string& param, Rml::Event& event) {
+				if (!debug_context.warp_available) {
+					return;
+				}
 				debug_context.area_index = event.GetParameter<int>("value", 0);
 				debug_context.scene_index = 0;
 				debug_context.entrance_index = 0;
@@ -584,6 +614,9 @@ public:
 			
 		recompui::register_event(listener, "scene_index_changed",
 			[](const std::string& param, Rml::Event& event) {
+				if (!debug_context.warp_available) {
+					return;
+				}
 				debug_context.scene_index = event.GetParameter<int>("value", 0);
 				debug_context.entrance_index = 0;
 				debug_context.update_warp_names();
@@ -969,6 +1002,7 @@ public:
 
 		// Bind the debug mode enabled flag.
 		constructor.Bind("debug_enabled", &debug_context.debug_enabled);
+		constructor.Bind("warp_available", &debug_context.warp_available);
 		
 		// Register the array type for string vectors.
 		constructor.RegisterArray<std::vector<std::string>>();
