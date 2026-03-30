@@ -490,20 +490,6 @@ void recomp::poll_inputs() {
         InputState.pending_mouse_delta = { 0.0f, 0.0f };
     }
     
-    if (InputState.keys) {
-        static bool save_was_held = false;
-        static bool load_was_held = false;
-        bool save_is_held = InputState.keys[SDL_SCANCODE_F5] != 0;
-        bool load_is_held = InputState.keys[SDL_SCANCODE_F7] != 0;
-        if (save_is_held && !save_was_held) {
-            zelda64::quicksave_save();
-        }
-        else if (load_is_held && !load_was_held) {
-            zelda64::quicksave_load();
-        }
-        save_was_held = save_is_held;
-        load_was_held = load_is_held;
-    }
 }
 
 void recomp::set_rumble(int controller_num, bool on) {

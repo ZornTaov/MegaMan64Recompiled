@@ -148,20 +148,36 @@ void queue_samples(int16_t* audio_data, size_t sample_count) {
     // Buffer for holding the output of swapping the audio channels. This is reused across
     // calls to reduce runtime allocations.
     static std::vector<float> swap_buffer;
+    static std::vector<int16_t> pending_samples;
     static std::array<float, duplicated_input_frames * input_channels> duplicated_sample_buffer;
+    static size_t misaligned_chunk_warning_count = 0;
 
-    // Skip chunks that are too small to process with the duplication scheme.
+    // Buffer chunks that are too small to process with the duplication scheme instead of dropping them.
     constexpr size_t min_sample_count = duplicated_input_frames * input_channels;
-    if (sample_count <= min_sample_count) {
-        fprintf(stderr, "Warning: audio chunk too small (%zu samples, need > %zu), skipping\n",
-                sample_count, min_sample_count);
+
+    if (sample_count % input_channels != 0) {
+        if (misaligned_chunk_warning_count == 0 || (misaligned_chunk_warning_count % 64) == 0) {
+            fprintf(stderr,
+                "Warning: audio chunk not aligned to channel count (%zu samples, %u channels), truncating%s\n",
+                sample_count,
+                input_channels,
+                misaligned_chunk_warning_count == 0 ? " (further warnings rate-limited)" : "");
+        }
+        misaligned_chunk_warning_count++;
+        sample_count -= sample_count % input_channels;
+    }
+    if (sample_count == 0) {
         return;
     }
 
-    if (sample_count % input_channels != 0) {
-        fprintf(stderr, "Warning: audio chunk not aligned to channel count (%zu samples, %u channels), truncating\n",
-                sample_count, input_channels);
-        sample_count -= sample_count % input_channels;
+    if (!pending_samples.empty() || sample_count <= min_sample_count) {
+        pending_samples.insert(pending_samples.end(), audio_data, audio_data + sample_count);
+        if (pending_samples.size() <= min_sample_count) {
+            return;
+        }
+
+        audio_data = pending_samples.data();
+        sample_count = pending_samples.size();
     }
 
     // Make sure the swap buffer is large enough to hold the audio data, including any extra space needed for resampling.
@@ -218,6 +234,10 @@ void queue_samples(int16_t* audio_data, size_t sample_count) {
     // Queue the swapped audio data.
     // Offset the data start by only half the discarded frame count as the other half of the discarded frames are at the end of the buffer.
     SDL_QueueAudio(audio_device, samples_to_queue, num_bytes_to_queue);
+
+    if (!pending_samples.empty()) {
+        pending_samples.clear();
+    }
 }
 
 size_t get_frames_remaining() {
@@ -635,6 +655,7 @@ int main(int argc, char** argv) {
     printf("Found mods:\n");
     for (const auto& mod : recomp::mods::get_all_mod_details("mm")) {
         printf("  %s(%s)\n", mod.mod_id.c_str(), mod.version.to_string().c_str());
+        printf("    Enabled: %d\n", recomp::mods::is_mod_enabled(mod.mod_id));
         if (!mod.authors.empty()) {
             printf("    Authors: %s", mod.authors[0].c_str());
             for (size_t author_index = 1; author_index < mod.authors.size(); author_index++) {
@@ -652,8 +673,6 @@ int main(int argc, char** argv) {
             }
             printf("\n");
         }
-        // TODO load all mods as a temporary solution to not having a UI yet.
-        recomp::mods::enable_mod(mod.mod_id, true);
     }
     printf("\n");
 

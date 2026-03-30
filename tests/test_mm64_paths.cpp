@@ -44,6 +44,7 @@ static void test_config_file_paths() {
     CHECK(zelda64::paths::config_file_path(app_dir, zelda64::paths::graphics_config_filename) == app_dir / "graphics.json");
     CHECK(zelda64::paths::config_file_path(app_dir, zelda64::paths::controls_config_filename) == app_dir / "controls.json");
     CHECK(zelda64::paths::config_file_path(app_dir, zelda64::paths::sound_config_filename) == app_dir / "sound.json");
+    CHECK(zelda64::paths::config_file_path(app_dir, zelda64::paths::mods_config_filename) == app_dir / "mods.json");
 }
 
 static void test_save_file_paths() {
@@ -53,9 +54,16 @@ static void test_save_file_paths() {
     CHECK(zelda64::paths::save_file_path(app_dir, u8"profile1", u8"mods") == app_dir / "saves" / "mods" / "profile1.bin");
 }
 
+static void test_mod_config_paths() {
+    const std::filesystem::path app_dir = std::filesystem::path("D:/tmp/mm64");
+
+    CHECK(zelda64::paths::mod_config_directory_path(app_dir) == app_dir / "mod_config");
+}
+
 int main() {
     test_portable_mode_marker();
     test_config_file_paths();
     test_save_file_paths();
+    test_mod_config_paths();
     return failures ? EXIT_FAILURE : EXIT_SUCCESS;
 }

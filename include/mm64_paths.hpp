@@ -10,7 +10,9 @@ namespace zelda64::paths {
     inline constexpr std::u8string_view graphics_config_filename = u8"graphics.json";
     inline constexpr std::u8string_view controls_config_filename = u8"controls.json";
     inline constexpr std::u8string_view sound_config_filename = u8"sound.json";
+    inline constexpr std::u8string_view mods_config_filename = u8"mods.json";
     inline constexpr std::u8string_view saves_directory = u8"saves";
+    inline constexpr std::u8string_view mod_config_directory = u8"mod_config";
 
     inline bool has_portable_mode_marker(const std::filesystem::path& dir) {
         return std::filesystem::exists(dir / "portable.txt");
@@ -33,6 +35,10 @@ namespace zelda64::paths {
         std::u8string filename{ name };
         filename += u8".bin";
         return save_dir / std::filesystem::path{ filename };
+    }
+
+    inline std::filesystem::path mod_config_directory_path(const std::filesystem::path& app_dir) {
+        return app_dir / std::filesystem::path{ mod_config_directory };
     }
 }
 
