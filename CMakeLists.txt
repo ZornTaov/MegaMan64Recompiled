@@ -10,12 +10,35 @@ if (APPLE)
     set(CMAKE_OSX_DEPLOYMENT_TARGET "11.0" CACHE STRING "Minimum OS X deployment version")
 endif()
 
+if (WIN32)
+    file(GLOB MM64_WINSDK_BIN_DIRS LIST_DIRECTORIES TRUE "C:/Program Files (x86)/Windows Kits/10/bin/*")
+    list(SORT MM64_WINSDK_BIN_DIRS COMPARE NATURAL ORDER DESCENDING)
+    foreach(MM64_WINSDK_BIN_DIR IN LISTS MM64_WINSDK_BIN_DIRS)
+        if(NOT DEFINED CMAKE_RC_COMPILER AND EXISTS "${MM64_WINSDK_BIN_DIR}/x64/rc.exe")
+            set(CMAKE_RC_COMPILER "${MM64_WINSDK_BIN_DIR}/x64/rc.exe" CACHE FILEPATH "Windows resource compiler")
+        endif()
+        if(NOT DEFINED CMAKE_MT AND EXISTS "${MM64_WINSDK_BIN_DIR}/x64/mt.exe")
+            set(CMAKE_MT "${MM64_WINSDK_BIN_DIR}/x64/mt.exe" CACHE FILEPATH "Windows manifest tool")
+        endif()
+        if(DEFINED CMAKE_RC_COMPILER AND DEFINED CMAKE_MT)
+            break()
+        endif()
+    endforeach()
+endif()
+
 project(MegaMan64Recompiled LANGUAGES C CXX)
 set(CMAKE_C_STANDARD 17)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 # set(CMAKE_CXX_VISIBILITY_PRESET hidden)
+
+set(MM64_MSVC_LIKE OFF)
+if (MSVC
+    OR (CMAKE_C_COMPILER_ID STREQUAL "Clang" AND CMAKE_C_SIMULATE_ID STREQUAL "MSVC")
+    OR (CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND CMAKE_CXX_SIMULATE_ID STREQUAL "MSVC"))
+    set(MM64_MSVC_LIKE ON)
+endif()
 
 if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND CMAKE_CXX_SIMULATE_ID STREQUAL "MSVC")
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-everything /W4")
@@ -100,13 +123,19 @@ endif()
 # RecompiledFuncs - Library containing the primary recompiler output
 add_library(RecompiledFuncs STATIC)
 
-set(MM64_RECOMPILED_FUNC_COMPILE_OPTIONS
-    $<$<C_COMPILER_ID:MSVC>:/bigobj>
-    $<$<C_COMPILER_ID:MSVC>:/wd4101>
-    $<$<NOT:$<C_COMPILER_ID:MSVC>>:-fno-strict-aliasing>
-    $<$<NOT:$<C_COMPILER_ID:MSVC>>:-Wno-unused-variable>
-    $<$<NOT:$<C_COMPILER_ID:MSVC>>:-Wno-implicit-function-declaration>
-)
+set(MM64_RECOMPILED_FUNC_COMPILE_OPTIONS "")
+if(MM64_MSVC_LIKE)
+    list(APPEND MM64_RECOMPILED_FUNC_COMPILE_OPTIONS
+        /bigobj
+        /wd4101
+    )
+else()
+    list(APPEND MM64_RECOMPILED_FUNC_COMPILE_OPTIONS
+        -fno-strict-aliasing
+        -Wno-unused-variable
+        -Wno-implicit-function-declaration
+    )
+endif()
 
 target_compile_options(RecompiledFuncs PRIVATE
     # -Wno-unused-but-set-variable
@@ -163,7 +192,10 @@ if(MM64_ENABLE_PATCH_OVERLAYS)
     # Build patches.elf using native Windows build script (no bash/make dependency)
     if(WIN32)
         add_custom_target(PatchesBin
-            COMMAND powershell -ExecutionPolicy Bypass -File ${CMAKE_SOURCE_DIR}/patches/build_patches.ps1
+            COMMAND ${CMAKE_COMMAND} -E env
+                MM64_PATCHES_CC=${PATCHES_C_COMPILER}
+                MM64_PATCHES_LD=${PATCHES_LD}
+                powershell -ExecutionPolicy Bypass -File ${CMAKE_SOURCE_DIR}/patches/build_patches.ps1
             WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/patches
             BYPRODUCTS ${CMAKE_SOURCE_DIR}/patches/patches.elf
         )
@@ -200,12 +232,25 @@ endif()
 # Download controller db file for controller support via SDL2
 set(GAMECONTROLLERDB_COMMIT "b1e4090b3d4266e55feb0793efa35792e05faf66")
 set(GAMECONTROLLERDB_URL "https://raw.githubusercontent.com/gabomdq/SDL_GameControllerDB/${GAMECONTROLLERDB_COMMIT}/gamecontrollerdb.txt")
+set(MM64_GAMECONTROLLERDB_PATH "${CMAKE_SOURCE_DIR}/gamecontrollerdb.txt")
 
-file(DOWNLOAD ${GAMECONTROLLERDB_URL} ${CMAKE_SOURCE_DIR}/gamecontrollerdb.txt
-     TLS_VERIFY ON)
+if(NOT EXISTS "${MM64_GAMECONTROLLERDB_PATH}")
+    file(DOWNLOAD ${GAMECONTROLLERDB_URL} "${MM64_GAMECONTROLLERDB_PATH}"
+         STATUS MM64_GAMECONTROLLERDB_DOWNLOAD_STATUS
+         TLS_VERIFY ON)
+    list(GET MM64_GAMECONTROLLERDB_DOWNLOAD_STATUS 0 MM64_GAMECONTROLLERDB_DOWNLOAD_CODE)
+    list(GET MM64_GAMECONTROLLERDB_DOWNLOAD_STATUS 1 MM64_GAMECONTROLLERDB_DOWNLOAD_MESSAGE)
+    if(NOT MM64_GAMECONTROLLERDB_DOWNLOAD_CODE EQUAL 0)
+        file(REMOVE "${MM64_GAMECONTROLLERDB_PATH}")
+        message(FATAL_ERROR
+            "Failed to download gamecontrollerdb.txt from ${GAMECONTROLLERDB_URL}: "
+            "${MM64_GAMECONTROLLERDB_DOWNLOAD_MESSAGE}"
+        )
+    endif()
+endif()
 
 add_custom_target(DownloadGameControllerDB
-    DEPENDS ${CMAKE_SOURCE_DIR}/gamecontrollerdb.txt)
+    DEPENDS "${MM64_GAMECONTROLLERDB_PATH}")
 
 # Main executable
 add_executable(MegaMan64Recompiled)
@@ -297,31 +342,77 @@ elseif (APPLE)
 endif()
 
 if (WIN32)
-    include(FetchContent)
+    set(MM64_WINDOWS_SDL2_ROOT "" CACHE PATH "Path to an extracted SDL2 development package root on Windows")
+    option(MM64_WINDOWS_FETCH_SDL2 "Automatically download SDL2 on Windows when no local root is configured" ON)
 
-    if (DEFINED ENV{SDL2_VERSION})
-        set(SDL2_VERSION $ENV{SDL2_VERSION})
-    else()
-        set(SDL2_VERSION "2.30.3")
+    set(MM64_SDL2_ROOT "")
+    foreach(MM64_SDL2_CANDIDATE IN ITEMS
+        "${MM64_WINDOWS_SDL2_ROOT}"
+        "$ENV{SDL2_DIR}"
+        "$ENV{SDL2_ROOT}"
+    )
+        if(MM64_SDL2_CANDIDATE AND EXISTS "${MM64_SDL2_CANDIDATE}/include/SDL.h")
+            set(MM64_SDL2_ROOT "${MM64_SDL2_CANDIDATE}")
+            break()
+        endif()
+    endforeach()
+
+    if(NOT MM64_SDL2_ROOT)
+        if(NOT MM64_WINDOWS_FETCH_SDL2)
+            message(FATAL_ERROR
+                "SDL2 was not found. Set MM64_WINDOWS_SDL2_ROOT (or SDL2_DIR / SDL2_ROOT) "
+                "to an extracted SDL2 development package, or leave MM64_WINDOWS_FETCH_SDL2 enabled."
+            )
+        endif()
+
+        include(FetchContent)
+
+        if (DEFINED ENV{SDL2_VERSION})
+            set(SDL2_VERSION $ENV{SDL2_VERSION})
+        else()
+            set(SDL2_VERSION "2.30.3")
+        endif()
+
+        # Fetch SDL2 on windows when no local SDK is configured.
+        FetchContent_Declare(
+            sdl2
+            URL https://github.com/libsdl-org/SDL/releases/download/release-${SDL2_VERSION}/SDL2-devel-${SDL2_VERSION}-VC.zip
+        )
+        FetchContent_MakeAvailable(sdl2)
+        set(MM64_SDL2_ROOT "${sdl2_SOURCE_DIR}")
     endif()
 
-    # Fetch SDL2 on windows
-    FetchContent_Declare(
-        sdl2
-        URL https://github.com/libsdl-org/SDL/releases/download/release-${SDL2_VERSION}/SDL2-devel-${SDL2_VERSION}-VC.zip
+    set(MM64_SDL2_INCLUDE_DIR "${MM64_SDL2_ROOT}/include")
+    set(MM64_SDL2_LIB_DIR "${MM64_SDL2_ROOT}/lib/x64")
+    set(MM64_SDL2_DLL "${MM64_SDL2_LIB_DIR}/SDL2.dll")
+    find_library(MM64_SDL2_LIBRARY
+        NAMES SDL2
+        PATHS "${MM64_SDL2_LIB_DIR}"
+        NO_DEFAULT_PATH
     )
-    FetchContent_MakeAvailable(sdl2)
+
+    if(NOT EXISTS "${MM64_SDL2_INCLUDE_DIR}/SDL.h")
+        message(FATAL_ERROR "SDL2 headers were not found under ${MM64_SDL2_INCLUDE_DIR}.")
+    endif()
+    if(NOT MM64_SDL2_LIBRARY)
+        message(FATAL_ERROR "SDL2 library was not found under ${MM64_SDL2_LIB_DIR}.")
+    endif()
+    if(NOT EXISTS "${MM64_SDL2_DLL}")
+        message(FATAL_ERROR "SDL2.dll was not found under ${MM64_SDL2_LIB_DIR}.")
+    endif()
+
     target_include_directories(MegaMan64Recompiled PRIVATE
-        ${sdl2_SOURCE_DIR}/include
+        "${MM64_SDL2_INCLUDE_DIR}"
     )
     target_link_directories(MegaMan64Recompiled PRIVATE
-        ${sdl2_SOURCE_DIR}/lib/x64
+        "${MM64_SDL2_LIB_DIR}"
     )
+    target_link_libraries(MegaMan64Recompiled PRIVATE "${MM64_SDL2_LIBRARY}")
 
     # Copy SDL2 and dxc DLLs to output folder as post build step
     add_custom_command(TARGET MegaMan64Recompiled POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            "${sdl2_SOURCE_DIR}/lib/x64/SDL2.dll"
+            "${MM64_SDL2_DLL}"
             "${CMAKE_SOURCE_DIR}/lib/rt64/src/contrib/dxc/bin/x64/dxil.dll"
             "${CMAKE_SOURCE_DIR}/lib/rt64/src/contrib/dxc/bin/x64/dxcompiler.dll"
             $<TARGET_FILE_DIR:MegaMan64Recompiled>)
@@ -338,7 +429,6 @@ if (WIN32)
     if (NOT (CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND CMAKE_CXX_SIMULATE_ID STREQUAL "MSVC"))
         target_sources(MegaMan64Recompiled PRIVATE ${CMAKE_SOURCE_DIR}/icons/app.rc)
     endif()
-    target_link_libraries(MegaMan64Recompiled PRIVATE SDL2)
 endif()
 
 if (APPLE)

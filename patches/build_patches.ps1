@@ -1,7 +1,71 @@
+Set-StrictMode -Version Latest
+$ErrorActionPreference = "Stop"
+
+function Resolve-ToolPath {
+    param(
+        [string[]]$EnvVarNames,
+        [string[]]$CommandNames,
+        [string[]]$CandidatePaths,
+        [string]$DisplayName
+    )
+
+    foreach ($envVarName in $EnvVarNames) {
+        $requested = [Environment]::GetEnvironmentVariable($envVarName)
+        if ([string]::IsNullOrWhiteSpace($requested)) {
+            continue
+        }
+
+        if (Test-Path -LiteralPath $requested) {
+            return (Resolve-Path -LiteralPath $requested).Path
+        }
+
+        $resolvedCommand = Get-Command $requested -ErrorAction SilentlyContinue
+        if ($resolvedCommand) {
+            return $resolvedCommand.Source
+        }
+
+        throw "Unable to resolve $DisplayName from environment variable $envVarName='$requested'."
+    }
+
+    foreach ($commandName in $CommandNames) {
+        $resolvedCommand = Get-Command $commandName -ErrorAction SilentlyContinue
+        if ($resolvedCommand) {
+            return $resolvedCommand.Source
+        }
+    }
+
+    foreach ($candidatePath in $CandidatePaths) {
+        if (Test-Path -LiteralPath $candidatePath) {
+            return (Resolve-Path -LiteralPath $candidatePath).Path
+        }
+    }
+
+    throw "Unable to find $DisplayName. Set one of the environment variables [$($EnvVarNames -join ', ')] or install it in a standard location."
+}
+
 # PowerShell script to build patches.elf
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-$CC = "C:\Program Files\LLVM\bin\clang.exe"
-$LD = "C:\Program Files\LLVM\bin\ld.lld.exe"
+$CC = Resolve-ToolPath `
+    -EnvVarNames @("MM64_PATCHES_CC", "PATCHES_C_COMPILER") `
+    -CommandNames @("clang", "clang.exe") `
+    -CandidatePaths @(
+        "C:\Program Files\LLVM\bin\clang.exe",
+        "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Tools\Llvm\x64\bin\clang.exe",
+        "C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\Llvm\x64\bin\clang.exe"
+    ) `
+    -DisplayName "clang"
+$LD = Resolve-ToolPath `
+    -EnvVarNames @("MM64_PATCHES_LD", "PATCHES_LD") `
+    -CommandNames @("ld.lld", "ld.lld.exe", "lld-link", "lld-link.exe") `
+    -CandidatePaths @(
+        "C:\Program Files\LLVM\bin\ld.lld.exe",
+        "C:\Program Files\LLVM\bin\lld-link.exe",
+        "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Tools\Llvm\x64\bin\ld.lld.exe",
+        "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Tools\Llvm\x64\bin\lld-link.exe",
+        "C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\Llvm\x64\bin\ld.lld.exe",
+        "C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\Llvm\x64\bin\lld-link.exe"
+    ) `
+    -DisplayName "ld.lld"
 
 $CFLAGS = @(
     "-target", "mips",
@@ -45,10 +109,12 @@ $LDFLAGS = @(
 
 Push-Location $ScriptDir
 
+Write-Host "Using clang: $CC"
+Write-Host "Using linker: $LD"
 Write-Host "Compiling print.c..."
 & $CC @CFLAGS @CPPFLAGS "print.c" "-MMD" "-MF" "print.d" "-c" "-o" "print.o"
 if ($LASTEXITCODE -ne 0) {
-    Write-Host "Failed to compile print.c"
+    Write-Host "Failed to compile print.c. Ensure clang supports the MIPS target used by patch overlays."
     Pop-Location
     exit 1
 }

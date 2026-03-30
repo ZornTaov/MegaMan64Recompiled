@@ -41,6 +41,8 @@ The other tool necessary will be `make` which can be installed via [Chocolatey](
 choco install make
 ```
 
+If you want fully offline or repeatable Windows configure runs, you can also extract the official SDL2 development package yourself and point CMake at it with `-DMM64_WINDOWS_SDL2_ROOT=C:\path\to\SDL2-devel-...\SDL2-...`.
+
 ## 3. Obtain the Target ROM
 
 You will need the NTSC-U (USA, Rev 1) compressed Mega Man 64 ROM. Copy it to the repository root with the filename `megaman64.us.z64` (as specified in `us.rev1.toml`).
@@ -67,6 +69,21 @@ If you prefer the command line or you're on a Unix platform you can build the pr
 cmake -S . -B build-cmake -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_C_COMPILER=clang -G Ninja -DCMAKE_BUILD_TYPE=Release # or Debug if you want to debug
 cmake --build build-cmake --target MegaMan64Recompiled -j$(nproc) --config Release # or Debug
 ```
+
+On Windows, the equivalent command-line flow from a Visual Studio Developer PowerShell is:
+
+```powershell
+cmake -S . -B build-msvc -G Ninja -DCMAKE_BUILD_TYPE=Release
+cmake --build build-msvc --target MegaMan64Recompiled --config Release
+```
+
+Or from a regular PowerShell prompt you can use the repo helper, which locates Visual Studio, loads the dev environment, and runs the build for you:
+
+```powershell
+.\build_windows.ps1 -Configuration Release
+```
+
+If you enable patch overlays on Windows, make sure `clang` and `ld.lld` are either on `PATH` or provided via `PATCHES_C_COMPILER` / `PATCHES_LD`, and that your `clang` build includes support for the MIPS target used by the overlay toolchain.
 
 ## 6. Success
 
