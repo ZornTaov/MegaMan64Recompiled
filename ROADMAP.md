@@ -44,7 +44,7 @@ Goal: Ensure the recompiled version is behaviorally identical to the original N6
 
 | Priority | Item | Description |
 |----------|------|-------------|
-| High | Scene table accuracy | `src/game/scene_table.cpp` no longer ships Zelda placeholder data; populate it with Mega Man 64 stage/area data to re-enable debug warping. |
+| ~~High~~ | ~~Scene table accuracy~~ | ~~`src/game/scene_table.cpp` no longer ships Zelda placeholder data; populate it with Mega Man 64 stage/area data to re-enable debug warping.~~ Fixed: stages 0–30 (prototype STAGE max 0x1E) with PSX-verified ST labels where known; 16 scenarios each (prototype SCENARIO 0–0xF). In-game warp still requires patch overlays that call `recomp_get_pending_warp`. |
 | ~~Medium~~ | ~~`recomp_powf` register access~~ | ~~`src/game/recomp_api.cpp:50` reads `ctx->f14.fl` directly instead of using `_arg<1, float>()`. Restore the commented-out accessor.~~ Fixed: already uses `_arg<1, float>()`. |
 | Medium | RSP task handling | `get_rsp_microcode()` only handles `M_AUDTASK`. Verify no other RSP task types are used by MM64. |
 
