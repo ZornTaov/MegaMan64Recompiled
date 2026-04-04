@@ -625,4 +625,29 @@ if(MM64_BUILD_TESTS)
         target_link_libraries(mm64_test_config PRIVATE shell32 ole32)
     endif()
     add_test(NAME config_serialization_smoke COMMAND mm64_test_config)
+
+    add_executable(mm64_test_rom_decompression
+        ${CMAKE_SOURCE_DIR}/tests/test_rom_decompression.cpp
+        ${CMAKE_SOURCE_DIR}/src/game/rom_decompression.cpp
+        ${CMAKE_SOURCE_DIR}/src/game/yaz0.cpp
+    )
+    target_include_directories(mm64_test_rom_decompression PRIVATE ${CMAKE_SOURCE_DIR}/include)
+    target_compile_features(mm64_test_rom_decompression PRIVATE cxx_std_20)
+    add_test(NAME rom_decompression_smoke COMMAND mm64_test_rom_decompression)
+
+    add_executable(mm64_test_save_system
+        ${CMAKE_SOURCE_DIR}/tests/test_save_system.cpp
+        ${CMAKE_SOURCE_DIR}/lib/N64ModernRuntime/librecomp/src/flash.cpp
+        ${CMAKE_SOURCE_DIR}/src/game/quicksaving.cpp
+    )
+    target_include_directories(mm64_test_save_system PRIVATE
+        ${CMAKE_SOURCE_DIR}/include
+        ${CMAKE_SOURCE_DIR}/lib/N64ModernRuntime/N64Recomp/include
+        ${CMAKE_SOURCE_DIR}/lib/N64ModernRuntime/librecomp/include
+        ${CMAKE_SOURCE_DIR}/lib/N64ModernRuntime/thirdparty
+        ${CMAKE_SOURCE_DIR}/lib/N64ModernRuntime/ultramodern/include
+        ${CMAKE_SOURCE_DIR}/lib/concurrentqueue
+    )
+    target_compile_features(mm64_test_save_system PRIVATE cxx_std_20)
+    add_test(NAME save_system_smoke COMMAND mm64_test_save_system)
 endif()

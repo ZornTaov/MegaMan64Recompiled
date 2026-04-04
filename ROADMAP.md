@@ -139,8 +139,8 @@ Goal: Modernize the user experience without altering the game's core gameplay.
 | ~~High~~ | ~~`yaz0_decompress()`~~ | ~~Unit tests for valid data, truncated input, and malformed back-references (validate the new bounds checks).~~ Fixed: logic lives in `src/game/yaz0.cpp`; `tests/test_yaz0.cpp` + `mm64_test_yaz0` (CMake `MM64_BUILD_TESTS`, `ctest -R yaz0`). |
 | ~~High~~ | ~~Config serialisation~~ | ~~Round-trip save/load tests for each config section, including missing keys and corrupt JSON.~~ Fixed: `tests/test_config.cpp` + `mm64_test_config` cover general, graphics, controls, and sound save/load round-trips, missing-key defaults, and corrupt-file backup fallback. |
 | ~~Medium~~ | ~~Input mapping~~ | ~~Unit tests for `assign_mapping()` / `get_input_binding()` with edge-case indices.~~ Fixed: `tests/test_controls.cpp` + `mm64_test_controls` cover enum round-trips, per-device/per-slot bindings, invalid index handling, and `get_n64_input()` merge/clamp behavior. |
-| Medium | ROM validation | Unit tests for `decompress_mm()` with wrong size, wrong header, and correct input. |
-| Medium | Save system | Integration tests for Flashram save/load with known save data. |
+| ~~Medium~~ | ~~ROM validation~~ | ~~Unit tests for `decompress_mm()` with wrong size, wrong header, and correct input.~~ Fixed: `tests/test_rom_decompression.cpp` + `mm64_test_rom_decompression` cover size rejection, header rejection, and a synthetic valid ROM that verifies decompression output, DMA rewrite behavior, and padding. |
+| ~~Medium~~ | ~~Save system~~ | ~~Integration tests for Flashram save/load with known save data.~~ Fixed: `tests/test_save_system.cpp` + `mm64_test_save_system` cover Flashram init, page erase bounds, write/read round-trips, full erase behavior, and the current one-time quicksave warning UX. |
 | Low | UI smoke tests | Investigate headless RmlUi rendering for automated UI regression testing. |
 
 ---
