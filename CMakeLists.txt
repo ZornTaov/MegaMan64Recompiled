@@ -109,20 +109,72 @@ endif()
 
 option(MM64_ENABLE_PATCH_OVERLAYS "Build optional recompiled patch overlays" OFF)
 
-if(MM64_ENABLE_PATCH_OVERLAYS)
-    if(WIN32)
-        if(EXISTS "${CMAKE_SOURCE_DIR}/build-tools/N64Recomp.exe")
-            set(N64RECOMP_EXE "${CMAKE_SOURCE_DIR}/build-tools/N64Recomp.exe")
-        else()
-            set(N64RECOMP_EXE "${CMAKE_SOURCE_DIR}/N64Recomp.exe")
-        endif()
-    else()
-        if(EXISTS "${CMAKE_SOURCE_DIR}/build-tools/N64Recomp")
-            set(N64RECOMP_EXE "${CMAKE_SOURCE_DIR}/build-tools/N64Recomp")
-        else()
-            set(N64RECOMP_EXE "${CMAKE_SOURCE_DIR}/N64Recomp")
-        endif()
+set(MM64_RECOMPILED_PATCH_DIR "${CMAKE_SOURCE_DIR}/RecompiledPatches")
+set(MM64_PATCHES_ELF "${CMAKE_SOURCE_DIR}/patches/patches.elf")
+set(MM64_PATCHES_BIN "${CMAKE_SOURCE_DIR}/patches/patches.bin")
+set(MM64_RECOMPILED_PATCHES_C "${MM64_RECOMPILED_PATCH_DIR}/patches.c")
+set(MM64_RECOMPILED_PATCHES_BIN_C "${MM64_RECOMPILED_PATCH_DIR}/patches_bin.c")
+set(MM64_RECOMPILED_PATCHES_BIN_H "${MM64_RECOMPILED_PATCH_DIR}/patches_bin.h")
+set(MM64_RECOMPILED_PATCHES_OVERLAYS "${MM64_RECOMPILED_PATCH_DIR}/recomp_overlays.inl")
+set(MM64_RECOMPILED_PATCHES_FUNCS_H "${MM64_RECOMPILED_PATCH_DIR}/funcs.h")
+set(MM64_RECOMPILED_PATCHES_WRAPPER_H "${CMAKE_CURRENT_BINARY_DIR}/generated_patch_overlays.hpp")
+
+if(WIN32)
+    set(MM64_N64RECOMP_CANDIDATES
+        "${CMAKE_SOURCE_DIR}/build-tools/N64Recomp.exe"
+        "${CMAKE_SOURCE_DIR}/build-n64recomp/N64Recomp.exe"
+        "${CMAKE_SOURCE_DIR}/N64Recomp.exe"
+    )
+else()
+    set(MM64_N64RECOMP_CANDIDATES
+        "${CMAKE_SOURCE_DIR}/build-tools/N64Recomp"
+        "${CMAKE_SOURCE_DIR}/build-n64recomp/N64Recomp"
+        "${CMAKE_SOURCE_DIR}/N64Recomp"
+    )
+endif()
+
+unset(N64RECOMP_EXE)
+foreach(MM64_N64RECOMP_CANDIDATE IN LISTS MM64_N64RECOMP_CANDIDATES)
+    if(EXISTS "${MM64_N64RECOMP_CANDIDATE}")
+        set(N64RECOMP_EXE "${MM64_N64RECOMP_CANDIDATE}")
+        break()
     endif()
+endforeach()
+
+set(MM64_PATCH_ARTIFACTS_READY ON)
+set(MM64_PATCH_ARTIFACTS_MISSING "")
+foreach(MM64_PATCH_ARTIFACT IN ITEMS
+    "${MM64_PATCHES_BIN}"
+    "${MM64_RECOMPILED_PATCHES_C}"
+    "${MM64_RECOMPILED_PATCHES_OVERLAYS}"
+    "${MM64_RECOMPILED_PATCHES_FUNCS_H}"
+)
+    if(NOT EXISTS "${MM64_PATCH_ARTIFACT}")
+        set(MM64_PATCH_ARTIFACTS_READY OFF)
+        string(APPEND MM64_PATCH_ARTIFACTS_MISSING "  - ${MM64_PATCH_ARTIFACT}\n")
+    endif()
+endforeach()
+
+if(MM64_ENABLE_PATCH_OVERLAYS AND NOT DEFINED N64RECOMP_EXE)
+    string(REPLACE ";" "\n  - " MM64_N64RECOMP_SEARCH_PATHS "${MM64_N64RECOMP_CANDIDATES}")
+    message(FATAL_ERROR
+        "MM64_ENABLE_PATCH_OVERLAYS=ON but N64Recomp was not found.\n"
+        "Searched:\n"
+        "  - ${MM64_N64RECOMP_SEARCH_PATHS}\n"
+    )
+endif()
+
+set(MM64_BUILD_PATCH_OVERLAYS OFF)
+if(MM64_ENABLE_PATCH_OVERLAYS)
+    set(MM64_BUILD_PATCH_OVERLAYS ON)
+elseif(MM64_PATCH_ARTIFACTS_READY)
+    set(MM64_BUILD_PATCH_OVERLAYS ON)
+    message(STATUS "Using existing recompiled patch artifacts from ${MM64_RECOMPILED_PATCH_DIR}")
+elseif(EXISTS "${MM64_RECOMPILED_PATCH_DIR}" AND NOT MM64_PATCH_ARTIFACTS_READY)
+    message(STATUS
+        "Recompiled patch artifacts are incomplete, so native patch overlays will stay disabled.\n"
+        "${MM64_PATCH_ARTIFACTS_MISSING}"
+    )
 endif()
 
 target_include_directories(rt64 PRIVATE ${CMAKE_BINARY_DIR}/rt64/src)
@@ -178,7 +230,7 @@ target_include_directories(RecompiledFuncs PRIVATE
 
 target_sources(RecompiledFuncs PRIVATE ${FUNC_C_SOURCES} ${FUNC_CXX_SOURCES})
 
-if(MM64_ENABLE_PATCH_OVERLAYS)
+if(MM64_BUILD_PATCH_OVERLAYS)
     # PatchesLib - Library containing the recompiled output for any custom function patches
     add_library(PatchesLib STATIC)
 
@@ -195,62 +247,97 @@ if(MM64_ENABLE_PATCH_OVERLAYS)
     )
 
     target_sources(PatchesLib PRIVATE
-        ${CMAKE_SOURCE_DIR}/RecompiledPatches/patches.c
-        ${CMAKE_SOURCE_DIR}/RecompiledPatches/patches_bin.c
+        ${MM64_RECOMPILED_PATCHES_C}
+        ${MM64_RECOMPILED_PATCHES_BIN_C}
     )
 
     if(NOT MM64_MSVC_LIKE)
-        set_source_files_properties(${CMAKE_SOURCE_DIR}/RecompiledPatches/patches.c PROPERTIES COMPILE_FLAGS -fno-strict-aliasing)
+        set_source_files_properties(${MM64_RECOMPILED_PATCHES_C} PROPERTIES COMPILE_FLAGS -fno-strict-aliasing)
     endif()
 
-    # Build patches elf
-    if(NOT DEFINED PATCHES_C_COMPILER)
-        set(PATCHES_C_COMPILER clang)
-    endif()
+    if(MM64_ENABLE_PATCH_OVERLAYS)
+        if(NOT DEFINED PATCHES_C_COMPILER)
+            set(PATCHES_C_COMPILER clang)
+        endif()
 
-    if(NOT DEFINED PATCHES_LD)
-        set(PATCHES_LD ld.lld)
-    endif()
+        if(NOT DEFINED PATCHES_LD)
+            set(PATCHES_LD ld.lld)
+        endif()
 
-    if(NOT DEFINED PATCHES_OBJCOPY)
-        set(PATCHES_OBJCOPY llvm-objcopy)
-    endif()
+        if(WIN32)
+            add_custom_command(OUTPUT ${MM64_PATCHES_ELF}
+                COMMAND ${CMAKE_COMMAND} -E env
+                    MM64_PATCHES_CC=${PATCHES_C_COMPILER}
+                    MM64_PATCHES_LD=${PATCHES_LD}
+                    powershell -ExecutionPolicy Bypass -File ${CMAKE_SOURCE_DIR}/patches/build_patches.ps1
+                WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/patches
+                DEPENDS
+                    ${CMAKE_SOURCE_DIR}/patches/build_patches.ps1
+                    ${CMAKE_SOURCE_DIR}/patches/print.c
+                    ${CMAKE_SOURCE_DIR}/patches/patches.ld
+                    ${CMAKE_SOURCE_DIR}/patches/syms.ld
+                VERBATIM
+            )
+        else()
+            add_custom_command(OUTPUT ${MM64_PATCHES_ELF}
+                COMMAND ${CMAKE_COMMAND} -E env CC=${PATCHES_C_COMPILER} LD=${PATCHES_LD} bash -lc "make -f Makefile"
+                WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/patches
+                DEPENDS
+                    ${CMAKE_SOURCE_DIR}/patches/Makefile
+                    ${CMAKE_SOURCE_DIR}/patches/print.c
+                    ${CMAKE_SOURCE_DIR}/patches/patches.ld
+                    ${CMAKE_SOURCE_DIR}/patches/syms.ld
+                VERBATIM
+            )
+        endif()
 
-    # Build patches.elf using native Windows build script (no bash/make dependency)
-    if(WIN32)
-        add_custom_target(PatchesBin
-            COMMAND ${CMAKE_COMMAND} -E env
-                MM64_PATCHES_CC=${PATCHES_C_COMPILER}
-                MM64_PATCHES_LD=${PATCHES_LD}
-                powershell -ExecutionPolicy Bypass -File ${CMAKE_SOURCE_DIR}/patches/build_patches.ps1
-            WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/patches
-            BYPRODUCTS ${CMAKE_SOURCE_DIR}/patches/patches.elf
+        add_custom_command(OUTPUT
+                               ${MM64_PATCHES_BIN}
+                               ${MM64_RECOMPILED_PATCHES_C}
+                               ${MM64_RECOMPILED_PATCHES_OVERLAYS}
+                               ${MM64_RECOMPILED_PATCHES_FUNCS_H}
+                           COMMAND ${CMAKE_COMMAND} -E make_directory ${MM64_RECOMPILED_PATCH_DIR}
+                           COMMAND ${N64RECOMP_EXE} ${CMAKE_SOURCE_DIR}/patches.toml
+                           WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+                           DEPENDS
+                               ${MM64_PATCHES_ELF}
+                               ${CMAKE_SOURCE_DIR}/patches.toml
+                           VERBATIM
         )
-    else()
-        add_custom_target(PatchesBin
-            COMMAND ${CMAKE_COMMAND} -E env CC=${PATCHES_C_COMPILER} LD=${PATCHES_LD} bash -lc "make -f Makefile"
-            WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/patches
-            BYPRODUCTS ${CMAKE_SOURCE_DIR}/patches/patches.elf
-        )
     endif()
 
-    # Generate patches_bin.c from patches.bin
-    add_custom_command(OUTPUT ${CMAKE_SOURCE_DIR}/RecompiledPatches/patches_bin.c
-        COMMAND file_to_c ${CMAKE_SOURCE_DIR}/patches/patches.bin mm_patches_bin ${CMAKE_SOURCE_DIR}/RecompiledPatches/patches_bin.c ${CMAKE_SOURCE_DIR}/RecompiledPatches/patches_bin.h
-        DEPENDS ${CMAKE_SOURCE_DIR}/patches/patches.bin
-    )
-
-    # Recompile patches elf into patches.c and patches.bin
     add_custom_command(OUTPUT
-                           ${CMAKE_SOURCE_DIR}/patches/patches.bin
-                           ${CMAKE_SOURCE_DIR}/RecompiledPatches/patches.c
-                           ${CMAKE_SOURCE_DIR}/RecompiledPatches/recomp_overlays.inl
-                           ${CMAKE_SOURCE_DIR}/RecompiledPatches/funcs.h
-                       COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_SOURCE_DIR}/RecompiledPatches
-                       COMMAND ${N64RECOMP_EXE} ${CMAKE_SOURCE_DIR}/patches.toml
-                       WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
-                       DEPENDS ${CMAKE_SOURCE_DIR}/patches/patches.elf
+                           ${MM64_RECOMPILED_PATCHES_BIN_C}
+                           ${MM64_RECOMPILED_PATCHES_BIN_H}
+                       COMMAND ${CMAKE_COMMAND}
+                           -DINPUT_FILE=${MM64_PATCHES_BIN}
+                           -DOUTPUT_C=${MM64_RECOMPILED_PATCHES_BIN_C}
+                           -DOUTPUT_H=${MM64_RECOMPILED_PATCHES_BIN_H}
+                           -DSYMBOL_NAME=mm_patches_bin
+                           -DFILE_TO_C=$<TARGET_FILE:file_to_c>
+                           -P ${CMAKE_SOURCE_DIR}/cmake/generate_patch_binary.cmake
+                       DEPENDS ${MM64_PATCHES_BIN}
+                       VERBATIM
     )
+
+    add_custom_command(OUTPUT ${MM64_RECOMPILED_PATCHES_WRAPPER_H}
+                       COMMAND ${CMAKE_COMMAND}
+                           -DSOURCE_FILE=${MM64_RECOMPILED_PATCHES_OVERLAYS}
+                           -DOUTPUT_FILE=${MM64_RECOMPILED_PATCHES_WRAPPER_H}
+                           -P ${CMAKE_SOURCE_DIR}/cmake/generate_patch_overlay_header.cmake
+                       DEPENDS ${MM64_RECOMPILED_PATCHES_OVERLAYS}
+                       VERBATIM
+    )
+
+    add_custom_target(RecompiledPatchArtifacts DEPENDS
+        ${MM64_RECOMPILED_PATCHES_C}
+        ${MM64_RECOMPILED_PATCHES_BIN_C}
+        ${MM64_RECOMPILED_PATCHES_BIN_H}
+        ${MM64_RECOMPILED_PATCHES_OVERLAYS}
+        ${MM64_RECOMPILED_PATCHES_FUNCS_H}
+        ${MM64_RECOMPILED_PATCHES_WRAPPER_H}
+    )
+    add_dependencies(PatchesLib RecompiledPatchArtifacts)
 else()
     add_library(PatchesLib INTERFACE)
 endif()
@@ -282,6 +369,9 @@ add_custom_target(DownloadGameControllerDB
 # Main executable
 add_executable(MegaMan64Recompiled)
 add_dependencies(MegaMan64Recompiled DownloadGameControllerDB)
+if(MM64_BUILD_PATCH_OVERLAYS)
+    add_dependencies(MegaMan64Recompiled RecompiledPatchArtifacts)
+endif()
 
 set (SOURCES
     ${CMAKE_SOURCE_DIR}/src/main/main.cpp
@@ -342,6 +432,12 @@ target_include_directories(MegaMan64Recompiled PRIVATE
     ${CMAKE_BINARY_DIR}/shaders
     ${CMAKE_CURRENT_BINARY_DIR}
 )
+
+if(MM64_BUILD_PATCH_OVERLAYS)
+    target_compile_definitions(MegaMan64Recompiled PRIVATE MM64_HAS_RECOMPILED_PATCHES=1)
+else()
+    target_compile_definitions(MegaMan64Recompiled PRIVATE MM64_HAS_RECOMPILED_PATCHES=0)
+endif()
 
 if(MM64_MSVC_LIKE)
     target_compile_options(MegaMan64Recompiled PRIVATE /bigobj /utf-8)
@@ -626,6 +722,17 @@ if(MM64_BUILD_TESTS)
         target_link_libraries(mm64_test_config PRIVATE shell32 ole32)
     endif()
     add_test(NAME config_serialization_smoke COMMAND mm64_test_config)
+
+    add_executable(mm64_test_aspect_ratio
+        ${CMAKE_SOURCE_DIR}/tests/test_aspect_ratio.cpp
+    )
+    target_include_directories(mm64_test_aspect_ratio PRIVATE
+        ${CMAKE_SOURCE_DIR}/include
+        ${CMAKE_SOURCE_DIR}/lib/N64ModernRuntime/ultramodern/include
+        ${CMAKE_SOURCE_DIR}/lib/N64ModernRuntime/thirdparty
+    )
+    target_compile_features(mm64_test_aspect_ratio PRIVATE cxx_std_20)
+    add_test(NAME aspect_ratio_smoke COMMAND mm64_test_aspect_ratio)
 
     add_executable(mm64_test_rom_decompression
         ${CMAKE_SOURCE_DIR}/tests/test_rom_decompression.cpp

@@ -653,7 +653,7 @@ int main(int argc, char** argv) {
         }
 
         zelda64::register_overlays();
-     //   zelda64::register_patches();
+        zelda64::register_patches();
         zelda64::load_config();
 
         recomp::rsp::callbacks_t rsp_callbacks{

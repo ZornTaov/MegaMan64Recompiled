@@ -7,6 +7,7 @@
 #include "recomp_ui.h"
 #include "zelda_render.h"
 #include "zelda_sound.h"
+#include "mm64_aspect_ratio.hpp"
 #include "librecomp/helpers.hpp"
 #include "../patches/input.h"
 #include "../patches/graphics.h"
@@ -74,16 +75,7 @@ extern "C" void recomp_get_target_aspect_ratio(uint8_t* rdram, recomp_context* c
     float original = _arg<0, float>(rdram, ctx);
     int width, height;
     recompui::get_window_size(width, height);
-
-    switch (graphics_config.ar_option) {
-        case ultramodern::renderer::AspectRatio::Original:
-        default:
-            _return(ctx, original);
-            return;
-        case ultramodern::renderer::AspectRatio::Expand:
-            _return(ctx, std::max(static_cast<float>(width) / height, original));
-            return;
-    }
+    _return(ctx, mm64::compute_target_aspect_ratio(graphics_config.ar_option, original, width, height));
 }
 
 extern "C" void recomp_get_targeting_mode(uint8_t* rdram, recomp_context* ctx) {
