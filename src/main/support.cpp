@@ -4,12 +4,35 @@
 #include "RmlUi/Core.h"
 #include "ultramodern/ultra64.h"
 
+#if defined(_WIN32)
+#define WIN32_LEAN_AND_MEAN
+#include <Windows.h>
+#endif
+
 #if defined(__linux__)
 #include "icon_bytes.h"
 #include "../../lib/rt64/src/contrib/stb/stb_image.h"
 #endif
 
 namespace zelda64 {
+#if defined(_WIN32)
+    static std::wstring utf8_to_wstring(const char* text) {
+        if (text == nullptr || text[0] == '\0') {
+            return {};
+        }
+
+        int wide_size = MultiByteToWideChar(CP_UTF8, 0, text, -1, nullptr, 0);
+        if (wide_size <= 0) {
+            return {};
+        }
+
+        std::wstring wide_text(static_cast<size_t>(wide_size), L'\0');
+        MultiByteToWideChar(CP_UTF8, 0, text, -1, wide_text.data(), wide_size);
+        wide_text.resize(static_cast<size_t>(wide_size - 1));
+        return wide_text;
+    }
+#endif
+
     // MARK: - Internal Helpers
     void perform_file_dialog_operation(const std::function<void(bool, const std::filesystem::path&)>& callback) {
         nfdnchar_t* native_path = nullptr;
@@ -56,7 +79,13 @@ namespace zelda64 {
         SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, title_copy.c_str(), message_copy.c_str(), nullptr);
     });
 #else
-        SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, title, message, nullptr);
+        if (SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, title, message, nullptr) != 0) {
+#if defined(_WIN32)
+            std::wstring wide_title = utf8_to_wstring(title);
+            std::wstring wide_message = utf8_to_wstring(message);
+            MessageBoxW(nullptr, wide_message.c_str(), wide_title.c_str(), MB_OK | MB_ICONERROR | MB_TASKMODAL);
+#endif
+        }
 #endif
     }
 

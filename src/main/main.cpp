@@ -339,28 +339,81 @@ std::vector<recomp::GameEntry> supported_games = {
 #ifdef _WIN32
 
 struct PreloadContext {
-    HANDLE handle;
-    HANDLE mapping_handle;
-    SIZE_T size;
-    PVOID view;
+    HANDLE handle = INVALID_HANDLE_VALUE;
+    HANDLE mapping_handle = nullptr;
+    SIZE_T size = 0;
+    PVOID view = nullptr;
+    bool locked = false;
 };
+
+static void close_preload_context(PreloadContext& context) {
+    if (context.locked && context.view != nullptr) {
+        VirtualUnlock(context.view, context.size);
+    }
+    if (context.view != nullptr) {
+        UnmapViewOfFile(context.view);
+    }
+    if (context.mapping_handle != nullptr) {
+        CloseHandle(context.mapping_handle);
+    }
+    if (context.handle != INVALID_HANDLE_VALUE) {
+        CloseHandle(context.handle);
+    }
+    context = {};
+}
+
+static bool prefetch_mapped_view(PVOID view, SIZE_T size) {
+    using PrefetchVirtualMemoryFn = BOOL(WINAPI*)(HANDLE, ULONG_PTR, PWIN32_MEMORY_RANGE_ENTRY, ULONG);
+
+    HMODULE kernel32 = GetModuleHandleW(L"kernel32.dll");
+    if (kernel32 != nullptr) {
+        auto prefetch_virtual_memory = reinterpret_cast<PrefetchVirtualMemoryFn>(
+            GetProcAddress(kernel32, "PrefetchVirtualMemory")
+        );
+
+        if (prefetch_virtual_memory != nullptr) {
+            WIN32_MEMORY_RANGE_ENTRY range{ view, size };
+            if (prefetch_virtual_memory(GetCurrentProcess(), 1, &range, 0) != 0) {
+                return true;
+            }
+        }
+    }
+
+    SYSTEM_INFO system_info{};
+    GetSystemInfo(&system_info);
+    SIZE_T page_size = std::max<SIZE_T>(system_info.dwPageSize, 4096);
+    volatile const uint8_t* bytes = static_cast<volatile const uint8_t*>(view);
+    volatile uint8_t sink = 0;
+    for (SIZE_T offset = 0; offset < size; offset += page_size) {
+        sink ^= bytes[offset];
+    }
+    if (size > 0) {
+        sink ^= bytes[size - 1];
+    }
+    (void)sink;
+    return true;
+}
 
 bool preload_executable(PreloadContext& context) {
     wchar_t module_name[MAX_PATH];
-    GetModuleFileNameW(NULL, module_name, MAX_PATH);
+    DWORD module_name_length = GetModuleFileNameW(nullptr, module_name, MAX_PATH);
+    if (module_name_length == 0 || module_name_length == MAX_PATH) {
+        fprintf(stderr, "Failed to resolve executable path for preload!\n");
+        context = {};
+        return false;
+    }
 
     context.handle = CreateFileW(module_name, GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
     if (context.handle == INVALID_HANDLE_VALUE) {
-        fprintf(stderr, "Failed to load executable into memory!");
+        fprintf(stderr, "Failed to load executable into memory!\n");
         context = {};
         return false;
     }
 
     LARGE_INTEGER module_size;
     if (!GetFileSizeEx(context.handle, &module_size)) {
-        fprintf(stderr, "Failed to get size of executable!");
-        CloseHandle(context.handle);
-        context = {};
+        fprintf(stderr, "Failed to get size of executable!\n");
+        close_preload_context(context);
         return false;
     }
 
@@ -368,66 +421,44 @@ bool preload_executable(PreloadContext& context) {
 
     context.mapping_handle = CreateFileMappingW(context.handle, nullptr, PAGE_READONLY, 0, 0, nullptr);
     if (context.mapping_handle == nullptr) {
-        fprintf(stderr, "Failed to create file mapping of executable!");
-        CloseHandle(context.handle);
-        context = {};
+        fprintf(stderr, "Failed to create file mapping of executable!\n");
+        close_preload_context(context);
         return false;
     }
 
     context.view = MapViewOfFile(context.mapping_handle, FILE_MAP_READ, 0, 0, 0);
     if (context.view == nullptr) {
-        fprintf(stderr, "Failed to map view of of executable!");
-        CloseHandle(context.mapping_handle);
-        CloseHandle(context.handle);
-        context = {};
+        fprintf(stderr, "Failed to map view of executable!\n");
+        close_preload_context(context);
         return false;
     }
 
-    DWORD pid = GetCurrentProcessId();
-    HANDLE process_handle = OpenProcess(PROCESS_SET_QUOTA | PROCESS_QUERY_INFORMATION, FALSE, pid);
-    if (process_handle == nullptr) {
-        fprintf(stderr, "Failed to open own process!");
-        CloseHandle(context.mapping_handle);
-        CloseHandle(context.handle);
-        context = {};
+    SIZE_T minimum_set_size = 0;
+    SIZE_T maximum_set_size = 0;
+    if (GetProcessWorkingSetSize(GetCurrentProcess(), &minimum_set_size, &maximum_set_size)) {
+        if (!SetProcessWorkingSetSize(GetCurrentProcess(), minimum_set_size + context.size, maximum_set_size + context.size)) {
+            fprintf(stderr, "Warning: failed to grow working set for executable preload (error %08lx); continuing with best-effort preload.\n", GetLastError());
+        }
+    } else {
+        fprintf(stderr, "Warning: failed to query working set for executable preload (error %08lx); continuing with best-effort preload.\n", GetLastError());
+    }
+
+    if (VirtualLock(context.view, context.size) != 0) {
+        context.locked = true;
+        return true;
+    }
+
+    fprintf(stderr, "Warning: VirtualLock failed for executable preload (error %08lx); using best-effort page prefetch instead.\n", GetLastError());
+    if (!prefetch_mapped_view(context.view, context.size)) {
+        close_preload_context(context);
         return false;
     }
 
-    SIZE_T minimum_set_size, maximum_set_size;
-    if (!GetProcessWorkingSetSize(process_handle, &minimum_set_size, &maximum_set_size)) {
-        fprintf(stderr, "Failed to get working set size!");
-        CloseHandle(context.mapping_handle);
-        CloseHandle(context.handle);
-        context = {};
-        return false;
-    }
-
-    if (!SetProcessWorkingSetSize(process_handle, minimum_set_size + context.size, maximum_set_size + context.size)) {
-        fprintf(stderr, "Failed to set working set size!");
-        CloseHandle(context.mapping_handle);
-        CloseHandle(context.handle);
-        context = {};
-        return false;
-    }
-
-    if (VirtualLock(context.view, context.size) == 0) {
-        fprintf(stderr, "Failed to lock view of executable! (Error: %08lx)\n", GetLastError());
-        CloseHandle(process_handle);
-        CloseHandle(context.mapping_handle);
-        CloseHandle(context.handle);
-        context = {};
-        return false;
-    }
-    
-    CloseHandle(process_handle);
     return true;
 }
 
 void release_preload(PreloadContext& context) {
-    VirtualUnlock(context.view, context.size);
-    CloseHandle(context.mapping_handle);
-    CloseHandle(context.handle);
-    context = {};
+    close_preload_context(context);
 }
 
 #else // !_WIN32
@@ -538,168 +569,198 @@ void disable_texture_pack(recomp::mods::ModContext& context, const recomp::mods:
 int main(int argc, char** argv) {
     (void)argc;
     (void)argv;
-    recomp::Version project_version{};
-    if (!recomp::Version::from_string(version_string, project_version)) {
-        ultramodern::error_handling::message_box(("Invalid version string: " + version_string).c_str());
+    PreloadContext preload_context;
+    bool preloaded = false;
+#ifdef _WIN32
+    bool nfd_initialized = false;
+#endif
+
+    auto cleanup_runtime = [&]() {
+#ifdef _WIN32
+        if (nfd_initialized) {
+            NFD_Quit();
+            nfd_initialized = false;
+        }
+#endif
+        if (audio_device != 0) {
+            SDL_CloseAudioDevice(audio_device);
+            audio_device = 0;
+        }
+        SDL_Quit();
+        if (preloaded) {
+            release_preload(preload_context);
+            preloaded = false;
+        }
+    };
+
+    try {
+        recomp::Version project_version{};
+        if (!recomp::Version::from_string(version_string, project_version)) {
+            ultramodern::error_handling::message_box(("Invalid version string: " + version_string).c_str());
+            return EXIT_FAILURE;
+        }
+
+        // Map this executable into memory and try to keep the pages warm to reduce runtime hitching.
+        preloaded = preload_executable(preload_context);
+        if (!preloaded) {
+            fprintf(stderr, "Failed to preload executable!\n");
+        }
+
+#ifdef _WIN32
+        // Set up console output to accept UTF-8 on windows
+        SetConsoleOutputCP(CP_UTF8);
+
+        // Initialize native file dialogs.
+        if (NFD_Init() != NFD_OKAY) {
+            exit_error("Failed to initialize native file dialogs.\n");
+        }
+        nfd_initialized = true;
+
+        // Change to a font that supports Japanese characters
+        CONSOLE_FONT_INFOEX cfi;
+        cfi.cbSize = sizeof cfi;
+        cfi.nFont = 0;
+        cfi.dwFontSize.X = 0;
+        cfi.dwFontSize.Y = 16;
+        cfi.FontFamily = FF_DONTCARE;
+        cfi.FontWeight = FW_NORMAL;
+        wcscpy_s(cfi.FaceName, L"NSimSun");
+        SetCurrentConsoleFontEx(GetStdHandle(STD_OUTPUT_HANDLE), FALSE, &cfi);
+#endif
+
+#ifdef _WIN32
+        // Force wasapi on Windows, as there seems to be some issue with sample queueing with directsound currently.
+        SDL_setenv("SDL_AUDIODRIVER", "wasapi", true);
+#endif
+        //printf("Current dir: %ls\n", std::filesystem::current_path().c_str());
+
+        // Initialize SDL audio and set the output frequency.
+        if (SDL_InitSubSystem(SDL_INIT_AUDIO) != 0) {
+            exit_error("Failed to initialize SDL audio: %s\n", SDL_GetError());
+        }
+        reset_audio(48000);
+
+        // Source controller mappings file
+        if (SDL_GameControllerAddMappingsFromFile("gamecontrollerdb.txt") < 0) {
+            fprintf(stderr, "Failed to load controller mappings: %s\n", SDL_GetError());
+        }
+
+        recomp::register_config_path(zelda64::get_app_folder_path());
+
+        // Register supported games and patches
+        for (const auto& game : supported_games) {
+            recomp::register_game(game);
+        }
+
+        zelda64::register_overlays();
+     //   zelda64::register_patches();
+        zelda64::load_config();
+
+        recomp::rsp::callbacks_t rsp_callbacks{
+            .get_rsp_microcode = get_rsp_microcode,
+        };
+
+        ultramodern::renderer::callbacks_t renderer_callbacks{
+            .create_render_context = zelda64::renderer::create_render_context,
+        };
+
+        ultramodern::gfx_callbacks_t gfx_callbacks{
+            .create_gfx = create_gfx,
+            .create_window = create_window,
+            .update_gfx = update_gfx,
+        };
+
+        ultramodern::audio_callbacks_t audio_callbacks{
+            .queue_samples = queue_samples,
+            .get_frames_remaining = get_frames_remaining,
+            .set_frequency = set_frequency,
+        };
+
+        ultramodern::input::callbacks_t input_callbacks{
+            .poll_input = recomp::poll_inputs,
+            .get_input = recomp::get_n64_input,
+            .set_rumble = recomp::set_rumble,
+            .get_connected_device_info = recomp::get_connected_device_info,
+        };
+
+        ultramodern::events::callbacks_t thread_callbacks{
+            .vi_callback = recomp::update_rumble,
+            .gfx_init_callback = recompui::update_supported_options,
+        };
+
+        ultramodern::error_handling::callbacks_t error_handling_callbacks{
+            .message_box = recompui::message_box,
+        };
+
+        ultramodern::threads::callbacks_t threads_callbacks{
+            .get_game_thread_name = zelda64::get_game_thread_name,
+        };
+
+        // Register the texture pack content type with rt64.json as its content file.
+        recomp::mods::ModContentType texture_pack_content_type{
+            .content_filename = "rt64.json",
+            .allow_runtime_toggle = true,
+            .on_enabled = enable_texture_pack,
+            .on_disabled = disable_texture_pack,
+        };
+        auto texture_pack_content_type_id = recomp::mods::register_mod_content_type(texture_pack_content_type);
+
+        // Register the .rtz texture pack file format with the previous content type as its only allowed content type.
+        recomp::mods::register_mod_container_type("rtz", std::vector{ texture_pack_content_type_id }, false);
+
+        recomp::mods::scan_mods();
+
+        printf("Found mods:\n");
+        for (const auto& mod : recomp::mods::get_all_mod_details("mm")) {
+            printf("  %s(%s)\n", mod.mod_id.c_str(), mod.version.to_string().c_str());
+            printf("    Enabled: %d\n", recomp::mods::is_mod_enabled(mod.mod_id));
+            if (!mod.authors.empty()) {
+                printf("    Authors: %s", mod.authors[0].c_str());
+                for (size_t author_index = 1; author_index < mod.authors.size(); author_index++) {
+                    const std::string& author = mod.authors[author_index];
+                    printf(", %s", author.c_str());
+                }
+                printf("\n");
+                printf("    Runtime toggleable: %d\n", mod.runtime_toggleable);
+            }
+            if (!mod.dependencies.empty()) {
+                printf("    Dependencies: %s:%s", mod.dependencies[0].mod_id.c_str(), mod.dependencies[0].version.to_string().c_str());
+                for (size_t dep_index = 1; dep_index < mod.dependencies.size(); dep_index++) {
+                    const recomp::mods::Dependency& dep = mod.dependencies[dep_index];
+                    printf(", %s:%s", dep.mod_id.c_str(), dep.version.to_string().c_str());
+                }
+                printf("\n");
+            }
+        }
+        printf("\n");
+
+        recomp::start(
+            project_version,
+            {},
+            rsp_callbacks,
+            renderer_callbacks,
+            audio_callbacks,
+            input_callbacks,
+            gfx_callbacks,
+            thread_callbacks,
+            error_handling_callbacks,
+            threads_callbacks
+        );
+    }
+
+    catch (const std::exception& e) {
+        fprintf(stderr, "Fatal exception: %s\n", e.what());
+        zelda64::show_error_message_box("Fatal Error", e.what());
+        cleanup_runtime();
+        return EXIT_FAILURE;
+    }
+    catch (...) {
+        fprintf(stderr, "Fatal exception: unknown error\n");
+        zelda64::show_error_message_box("Fatal Error", "An unexpected error occurred.");
+        cleanup_runtime();
         return EXIT_FAILURE;
     }
 
-    // Map this executable into memory and lock it, which should keep it in physical memory. This ensures
-    // that there are no stutters from the OS having to load new pages of the executable whenever a new code page is run.
-    PreloadContext preload_context;
-    bool preloaded = preload_executable(preload_context);
-
-    if (!preloaded) {
-        fprintf(stderr, "Failed to preload executable!\n");
-    }
-
-#ifdef _WIN32
-    // Set up console output to accept UTF-8 on windows
-    SetConsoleOutputCP(CP_UTF8);
-
-    // Initialize native file dialogs.
-    NFD_Init();
-
-    // Change to a font that supports Japanese characters
-    CONSOLE_FONT_INFOEX cfi;
-    cfi.cbSize = sizeof cfi;
-    cfi.nFont = 0;
-    cfi.dwFontSize.X = 0;
-    cfi.dwFontSize.Y = 16;
-    cfi.FontFamily = FF_DONTCARE;
-    cfi.FontWeight = FW_NORMAL;
-    wcscpy_s(cfi.FaceName, L"NSimSun");
-    SetCurrentConsoleFontEx(GetStdHandle(STD_OUTPUT_HANDLE), FALSE, &cfi);
-#endif
-
-#ifdef _WIN32
-    // Force wasapi on Windows, as there seems to be some issue with sample queueing with directsound currently.
-    SDL_setenv("SDL_AUDIODRIVER", "wasapi", true);
-#endif
-    //printf("Current dir: %ls\n", std::filesystem::current_path().c_str());
-
-    // Initialize SDL audio and set the output frequency.
-    SDL_InitSubSystem(SDL_INIT_AUDIO);
-    reset_audio(48000);
-
-    // Source controller mappings file
-    if (SDL_GameControllerAddMappingsFromFile("gamecontrollerdb.txt") < 0) {
-        fprintf(stderr, "Failed to load controller mappings: %s\n", SDL_GetError());
-    }
-
-    recomp::register_config_path(zelda64::get_app_folder_path());
-
-    // Register supported games and patches
-    for (const auto& game : supported_games) {
-        recomp::register_game(game);
-    }
-
-    zelda64::register_overlays();
- //   zelda64::register_patches();
-    zelda64::load_config();
-
-    recomp::rsp::callbacks_t rsp_callbacks{
-        .get_rsp_microcode = get_rsp_microcode,
-    };
-
-    ultramodern::renderer::callbacks_t renderer_callbacks{
-        .create_render_context = zelda64::renderer::create_render_context,
-    };
-
-    ultramodern::gfx_callbacks_t gfx_callbacks{
-        .create_gfx = create_gfx,
-        .create_window = create_window,
-        .update_gfx = update_gfx,
-    };
-
-    ultramodern::audio_callbacks_t audio_callbacks{
-        .queue_samples = queue_samples,
-        .get_frames_remaining = get_frames_remaining,
-        .set_frequency = set_frequency,
-    };
-
-    ultramodern::input::callbacks_t input_callbacks{
-        .poll_input = recomp::poll_inputs,
-        .get_input = recomp::get_n64_input,
-        .set_rumble = recomp::set_rumble,
-        .get_connected_device_info = recomp::get_connected_device_info,
-    };
-
-    ultramodern::events::callbacks_t thread_callbacks{
-        .vi_callback = recomp::update_rumble,
-        .gfx_init_callback = recompui::update_supported_options,
-    };
-
-    ultramodern::error_handling::callbacks_t error_handling_callbacks{
-        .message_box = recompui::message_box,
-    };
-
-    ultramodern::threads::callbacks_t threads_callbacks{
-        .get_game_thread_name = zelda64::get_game_thread_name,
-    };
-
-    // Register the texture pack content type with rt64.json as its content file.
-    recomp::mods::ModContentType texture_pack_content_type{
-        .content_filename = "rt64.json",
-        .allow_runtime_toggle = true,
-        .on_enabled = enable_texture_pack,
-        .on_disabled = disable_texture_pack,
-    };
-    auto texture_pack_content_type_id = recomp::mods::register_mod_content_type(texture_pack_content_type);
-
-    // Register the .rtz texture pack file format with the previous content type as its only allowed content type.
-    recomp::mods::register_mod_container_type("rtz", std::vector{ texture_pack_content_type_id }, false);
-
-    recomp::mods::scan_mods();
-
-    printf("Found mods:\n");
-    for (const auto& mod : recomp::mods::get_all_mod_details("mm")) {
-        printf("  %s(%s)\n", mod.mod_id.c_str(), mod.version.to_string().c_str());
-        printf("    Enabled: %d\n", recomp::mods::is_mod_enabled(mod.mod_id));
-        if (!mod.authors.empty()) {
-            printf("    Authors: %s", mod.authors[0].c_str());
-            for (size_t author_index = 1; author_index < mod.authors.size(); author_index++) {
-                const std::string& author = mod.authors[author_index];
-                printf(", %s", author.c_str());
-            }
-            printf("\n");
-            printf("    Runtime toggleable: %d\n", mod.runtime_toggleable);
-        }
-        if (!mod.dependencies.empty()) {
-            printf("    Dependencies: %s:%s", mod.dependencies[0].mod_id.c_str(), mod.dependencies[0].version.to_string().c_str());
-            for (size_t dep_index = 1; dep_index < mod.dependencies.size(); dep_index++) {
-                const recomp::mods::Dependency& dep = mod.dependencies[dep_index];
-                printf(", %s:%s", dep.mod_id.c_str(), dep.version.to_string().c_str());
-            }
-            printf("\n");
-        }
-    }
-    printf("\n");
-
-    recomp::start(
-        project_version,
-        {},
-        rsp_callbacks,
-        renderer_callbacks,
-        audio_callbacks,
-        input_callbacks,
-        gfx_callbacks,
-        thread_callbacks,
-        error_handling_callbacks,
-        threads_callbacks
-    );
-
-    NFD_Quit();
-
-    if (audio_device != 0) {
-        SDL_CloseAudioDevice(audio_device);
-        audio_device = 0;
-    }
-    SDL_Quit();
-
-    if (preloaded) {
-        release_preload(preload_context);
-    }
-
+    cleanup_runtime();
     return EXIT_SUCCESS;
 }

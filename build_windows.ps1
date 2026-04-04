@@ -40,6 +40,125 @@ function Get-VisualStudioInstallationPath {
     return $installationPath.Trim()
 }
 
+function Test-RequiredSubmodulesReady {
+    param([string]$RepoRoot)
+
+    $requiredSubmodules = @(
+        @{ Path = "lib/rt64"; Sentinel = "CMakeLists.txt" },
+        @{ Path = "lib/lunasvg"; Sentinel = "CMakeLists.txt" },
+        @{ Path = "lib/RmlUi"; Sentinel = "CMakeLists.txt" },
+        @{ Path = "lib/N64ModernRuntime"; Sentinel = "CMakeLists.txt" },
+        @{ Path = "lib/freetype-windows-binaries"; Sentinel = "include/ft2build.h" },
+        @{ Path = "MegaMan64RecompSyms"; Sentinel = "README.md" }
+    )
+
+    $missing = @()
+    foreach ($submodule in $requiredSubmodules) {
+        $candidate = Join-Path (Join-Path $RepoRoot $submodule.Path) $submodule.Sentinel
+        if (-not (Test-Path -LiteralPath $candidate)) {
+            $missing += $submodule.Path
+        }
+    }
+
+    if ($missing.Count -eq 0) {
+        return
+    }
+
+    $messageLines = @(
+        "Required git submodules are missing or not initialized:",
+        ""
+    )
+
+    foreach ($path in $missing) {
+        $messageLines += "  - $path"
+    }
+
+    $messageLines += ""
+    $messageLines += "Run this once from the repository root, then try again:"
+    $messageLines += "  git submodule update --init --recursive"
+
+    throw ($messageLines -join [Environment]::NewLine)
+}
+
+function Get-RecompilerToolPath {
+    param(
+        [string]$RepoRoot,
+        [string]$BaseName
+    )
+
+    foreach ($candidate in @(
+        (Join-Path $RepoRoot "build-tools\$BaseName"),
+        (Join-Path $RepoRoot $BaseName)
+    )) {
+        if (Test-Path -LiteralPath $candidate) {
+            return $candidate
+        }
+    }
+
+    return ""
+}
+
+function Test-GeneratedSourcesReady {
+    param([string]$RepoRoot)
+
+    $rspOutput = Join-Path $RepoRoot "rsp\aspMain.cpp"
+    $recompiledFuncsDir = Join-Path $RepoRoot "RecompiledFuncs"
+    $hasRspOutput = Test-Path -LiteralPath $rspOutput
+    $hasFunctionOutputs = $false
+
+    if (Test-Path -LiteralPath $recompiledFuncsDir) {
+        $generatedSources = Get-ChildItem -LiteralPath $recompiledFuncsDir -File -ErrorAction SilentlyContinue |
+            Where-Object { $_.Extension -in ".c", ".cpp" }
+        $hasFunctionOutputs = $generatedSources.Count -gt 0
+    }
+
+    if ($hasRspOutput -and $hasFunctionOutputs) {
+        return
+    }
+
+    $n64recompPath = Get-RecompilerToolPath -RepoRoot $RepoRoot -BaseName "N64Recomp.exe"
+    $rspRecompPath = Get-RecompilerToolPath -RepoRoot $RepoRoot -BaseName "RSPRecomp.exe"
+    $romPath = Join-Path $RepoRoot "megaman64.us.z64"
+
+    $messageLines = @(
+        "Required generated recompiler sources are missing:",
+        ""
+    )
+
+    if (-not $hasRspOutput) {
+        $messageLines += "  - rsp\aspMain.cpp"
+    }
+    if (-not $hasFunctionOutputs) {
+        $messageLines += "  - RecompiledFuncs\*.c / RecompiledFuncs\*.cpp"
+    }
+
+    $messageLines += ""
+    if (-not (Test-Path -LiteralPath $romPath)) {
+        $messageLines += "The expected ROM was not found at:"
+        $messageLines += "  $romPath"
+        $messageLines += ""
+    }
+
+    if ([string]::IsNullOrWhiteSpace($n64recompPath) -or [string]::IsNullOrWhiteSpace($rspRecompPath)) {
+        $messageLines += "Build or copy these tools into the repo root (or build-tools) first:"
+        if ([string]::IsNullOrWhiteSpace($n64recompPath)) {
+            $messageLines += "  - N64Recomp.exe"
+        }
+        if ([string]::IsNullOrWhiteSpace($rspRecompPath)) {
+            $messageLines += "  - RSPRecomp.exe"
+        }
+        $messageLines += ""
+    }
+
+    $messageLines += "Then generate the sources from the repository root:"
+    $messageLines += "  .\N64Recomp.exe us.rev1.toml"
+    $messageLines += "  .\RSPRecomp.exe asp.toml"
+    $messageLines += ""
+    $messageLines += "See BUILDING.md for the full setup flow."
+
+    throw ($messageLines -join [Environment]::NewLine)
+}
+
 function Resolve-Toolchain {
     param(
         [string]$RequestedToolchain,
@@ -96,6 +215,8 @@ function Resolve-LlvmBinDirectory {
 }
 
 $repoRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
+Test-RequiredSubmodulesReady -RepoRoot $repoRoot
+Test-GeneratedSourcesReady -RepoRoot $repoRoot
 $visualStudioRoot = Get-VisualStudioInstallationPath
 $vsDevCmd = Join-Path $visualStudioRoot "Common7\Tools\VsDevCmd.bat"
 if (-not (Test-Path -LiteralPath $vsDevCmd)) {
