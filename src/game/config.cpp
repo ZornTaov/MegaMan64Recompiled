@@ -446,7 +446,7 @@ bool load_input_device_from_json(const nlohmann::json& config_json, recomp::Inpu
         // Check if the json object for the given input exists and that it's an array.
         auto find_input_it = mappings_json.find(input_name);
         if (find_input_it == mappings_json.end() || !find_input_it->is_array()) {
-            assign_mapping(
+            assign_mapping_complete(
                 device,
                 cur_input,
                 recomp::get_default_mapping_for_input(
@@ -460,12 +460,17 @@ bool load_input_device_from_json(const nlohmann::json& config_json, recomp::Inpu
         }
         const nlohmann::json& input_json = *find_input_it;
 
+        std::vector<recomp::InputField> loaded_bindings{};
+        loaded_bindings.reserve(std::min(recomp::bindings_per_input, input_json.size()));
+
         // Deserialize all the bindings from the json array (up to the max number of bindings per input).
         for (size_t binding_index = 0; binding_index < std::min(recomp::bindings_per_input, input_json.size()); binding_index++) {
             recomp::InputField cur_field{};
             recomp::from_json(input_json[binding_index], cur_field);
-            recomp::set_input_binding(cur_input, binding_index, device, cur_field);
+            loaded_bindings.push_back(cur_field);
         }
+
+        assign_mapping_complete(device, cur_input, loaded_bindings);
     }
 
     return true;

@@ -62,6 +62,7 @@ recomp::InputField& recomp::get_input_binding(GameInput input, size_t binding_in
     }
     else {
         static recomp::InputField dummy_field = {};
+        dummy_field = {};
         return dummy_field;
     }
 }

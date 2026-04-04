@@ -589,4 +589,40 @@ if(MM64_BUILD_TESTS)
     target_include_directories(mm64_test_launcher_bootstrap PRIVATE ${CMAKE_SOURCE_DIR}/include)
     target_compile_features(mm64_test_launcher_bootstrap PRIVATE cxx_std_20)
     add_test(NAME launcher_bootstrap_smoke COMMAND mm64_test_launcher_bootstrap)
+
+    add_executable(mm64_test_controls
+        ${CMAKE_SOURCE_DIR}/tests/test_controls.cpp
+        ${CMAKE_SOURCE_DIR}/src/game/controls.cpp
+    )
+    target_include_directories(mm64_test_controls PRIVATE
+        ${CMAKE_SOURCE_DIR}/include
+        ${CMAKE_SOURCE_DIR}/lib/concurrentqueue
+        ${CMAKE_SOURCE_DIR}/lib/N64ModernRuntime/N64Recomp/include
+        ${CMAKE_SOURCE_DIR}/lib/N64ModernRuntime/librecomp/include
+        ${CMAKE_SOURCE_DIR}/lib/N64ModernRuntime/thirdparty
+        ${CMAKE_SOURCE_DIR}/lib/N64ModernRuntime/ultramodern/include
+    )
+    target_compile_features(mm64_test_controls PRIVATE cxx_std_20)
+    add_test(NAME controls_mapping_smoke COMMAND mm64_test_controls)
+
+    add_executable(mm64_test_config
+        ${CMAKE_SOURCE_DIR}/tests/test_config.cpp
+        ${CMAKE_SOURCE_DIR}/src/game/config.cpp
+    )
+    target_include_directories(mm64_test_config PRIVATE
+        ${CMAKE_SOURCE_DIR}/include
+        ${CMAKE_SOURCE_DIR}/lib/concurrentqueue
+        ${CMAKE_SOURCE_DIR}/lib/N64ModernRuntime/N64Recomp/include
+        ${CMAKE_SOURCE_DIR}/lib/N64ModernRuntime/librecomp/include
+        ${CMAKE_SOURCE_DIR}/lib/N64ModernRuntime/thirdparty
+        ${CMAKE_SOURCE_DIR}/lib/N64ModernRuntime/thirdparty/miniz
+        ${CMAKE_SOURCE_DIR}/lib/N64ModernRuntime/ultramodern/include
+        ${CMAKE_SOURCE_DIR}/lib/rt64/src
+        ${CMAKE_BINARY_DIR}/lib/N64ModernRuntime/librecomp/miniz
+    )
+    target_compile_features(mm64_test_config PRIVATE cxx_std_20)
+    if(WIN32)
+        target_link_libraries(mm64_test_config PRIVATE shell32 ole32)
+    endif()
+    add_test(NAME config_serialization_smoke COMMAND mm64_test_config)
 endif()
