@@ -27,6 +27,26 @@ struct ControllerState {
     };
 };
 
+namespace {
+
+void close_controller_handle(SDL_GameController* controller) {
+    if (controller != nullptr) {
+        SDL_GameControllerClose(controller);
+    }
+}
+
+void reset_controller_state(ControllerState& state, SDL_GameController* controller) {
+    state.controller = controller;
+    state.latest_accelerometer = {};
+    state.prev_gyro_timestamp = 0;
+    state.motion.Reset();
+    state.motion.SetCalibrationMode(
+        GamepadMotionHelpers::CalibrationMode::Stillness
+        | GamepadMotionHelpers::CalibrationMode::SensorFusion);
+}
+
+} // namespace
+
 static struct {
     const Uint8* keys = nullptr;
     SDL_Keymod keymod = SDL_Keymod::KMOD_NONE;
@@ -136,11 +156,13 @@ bool sdl_event_filter(void* userdata, SDL_Event* event) {
             SDL_GameController* controller = SDL_GameControllerOpen(controller_event->which);
             printf("Controller added: %d\n", controller_event->which);
             if (controller != nullptr) {
-                printf("  Instance ID: %d\n", SDL_JoystickInstanceID(SDL_GameControllerGetJoystick(controller)));
+                SDL_JoystickID instance_id = SDL_JoystickInstanceID(SDL_GameControllerGetJoystick(controller));
+                printf("  Instance ID: %d\n", instance_id);
                 {
                     std::lock_guard lock{ InputState.cur_controllers_mutex };
-                    ControllerState& state = InputState.controller_states[SDL_JoystickInstanceID(SDL_GameControllerGetJoystick(controller))];
-                    state.controller = controller;
+                    ControllerState& state = InputState.controller_states[instance_id];
+                    close_controller_handle(state.controller);
+                    reset_controller_state(state, controller);
                 }
 
                 if (SDL_GameControllerHasSensor(controller, SDL_SensorType::SDL_SENSOR_GYRO) && SDL_GameControllerHasSensor(controller, SDL_SensorType::SDL_SENSOR_ACCEL)) {
@@ -158,7 +180,11 @@ bool sdl_event_filter(void* userdata, SDL_Event* event) {
             printf("Controller removed: %d\n", controller_event->which);
             {
                 std::lock_guard lock{ InputState.cur_controllers_mutex };
-                InputState.controller_states.erase(controller_event->which);
+                auto state_it = InputState.controller_states.find(controller_event->which);
+                if (state_it != InputState.controller_states.end()) {
+                    close_controller_handle(state_it->second.controller);
+                    InputState.controller_states.erase(state_it);
+                }
             }
         }
         break;
