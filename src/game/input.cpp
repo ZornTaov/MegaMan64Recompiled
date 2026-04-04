@@ -492,12 +492,11 @@ ultramodern::input::connected_device_info_t recomp::get_connected_device_info(in
 
     switch (controller_num) {
         case 0:
-            if (!has_connected_controller) {
-                break;
-            }
             return ultramodern::input::connected_device_info_t {
                 .connected_device = ultramodern::input::Device::Controller,
-                .connected_pak = ultramodern::input::Pak::RumblePak,
+                .connected_pak = has_connected_controller
+                    ? ultramodern::input::Pak::RumblePak
+                    : ultramodern::input::Pak::None,
             };
     }
 
