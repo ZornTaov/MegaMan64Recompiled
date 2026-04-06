@@ -80,6 +80,17 @@
                                 style="nav-up: #res_auto; nav-down: #ar_expand"
                             />
                             <label class="config-option__tab-label" for="ds_4x">4x</label>
+                            <input type="radio"
+                                data-event-blur="set_cur_config_index(-1)"
+                                data-event-focus="set_cur_config_index(1)"
+                                name="downsampling"
+                                data-attrif-disabled="res_option == 'Auto'"
+                                data-checked="ds_option"
+                                value="8"
+                                id="ds_8x"
+                                style="nav-up: #res_auto; nav-down: #ar_expand"
+                            />
+                            <label class="config-option__tab-label" for="ds_8x">8x</label>
                             <div class="config-option__details">{{ds_info}}</div>
                         </div>
                     </div>

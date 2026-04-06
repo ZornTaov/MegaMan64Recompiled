@@ -750,6 +750,8 @@ public:
 							out = "Rendered in 480p and scaled to 240p";
 						} else if (new_options.ds_option == 4) {
 							out = "Rendered in 960p and scaled to 240p";
+						} else if (new_options.ds_option == 8) {
+							out = "Rendered in 1920p and scaled to 240p";
 						}
 						return;
 					case ultramodern::renderer::Resolution::Original2x:
@@ -757,6 +759,8 @@ public:
 							out = "Rendered in 960p and scaled to 480p";
 						} else if (new_options.ds_option == 4) {
 							out = "Rendered in 4K and scaled to 480p";
+						} else if (new_options.ds_option == 8) {
+							out = "Rendered in 8K and scaled to 480p";
 						}
 						return;
 				}

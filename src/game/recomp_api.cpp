@@ -148,6 +148,18 @@ extern "C" void recomp_get_camera_inputs(uint8_t* rdram, recomp_context* ctx) {
 
     recomp::get_right_analog(&x, &y);
 
+    float mouse_x, mouse_y;
+    recomp::get_mouse_deltas(&mouse_x, &mouse_y);
+
+    float gyro_x, gyro_y;
+    recomp::get_gyro_deltas(&gyro_x, &gyro_y);
+
+    // Merge stick, mouse, and gyro. 
+    // Stick is already scaled by its own logic (0 to 1). 
+    // Mouse and gyro deltas are already scaled by their respective sensitivities.
+    x += mouse_x + gyro_x;
+    y += mouse_y + gyro_y;
+
     float magnitude = sqrtf(x * x + y * y);
 
     if (magnitude < radial_deadzone) {
@@ -167,4 +179,11 @@ extern "C" void recomp_set_right_analog_suppressed(uint8_t* rdram, recomp_contex
     s32 suppressed = _arg<0, s32>(rdram, ctx);
 
     recomp::set_right_analog_suppressed(suppressed);
+}
+
+extern "C" void recomp_set_rumble(uint8_t* rdram, recomp_context* ctx) {
+    s32 controller_num = _arg<0, s32>(rdram, ctx);
+    s32 on = _arg<1, s32>(rdram, ctx);
+
+    recomp::set_rumble(controller_num, on != 0);
 }
