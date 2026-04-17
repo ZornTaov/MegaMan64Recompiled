@@ -87,7 +87,8 @@ bool recomp::get_n64_input(int controller_num, uint16_t* buttons_out, float* x_o
     float cur_x = 0.0f;
     float cur_y = 0.0f;
     
-    if (controller_num < 0 || controller_num >= 4) {
+    // Mega Man 64 only consumes the primary controller port.
+    if (controller_num != 0) {
         return false;
     }
 

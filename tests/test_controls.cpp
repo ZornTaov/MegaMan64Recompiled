@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdlib>
+#include <iostream>
 #include <ranges>
 #include <span>
 #include <utility>
@@ -13,6 +14,7 @@ static int failures = 0;
 #define CHECK(cond) \
     do { \
         if (!(cond)) { \
+            std::cerr << "CHECK failed at line " << __LINE__ << ": " #cond "\n"; \
             failures++; \
             return; \
         } \
@@ -55,25 +57,29 @@ bool nearly_equal(float lhs, float rhs, float epsilon = 0.0001f) {
 
 namespace recomp {
 
-float get_input_analog(const InputField& field) {
+float get_input_analog(int port_index, const InputField& field) {
+    (void)port_index;
     return analog_value(field);
 }
 
-float get_input_analog(const std::span<const InputField> fields) {
+float get_input_analog(int port_index, const std::span<const InputField> fields) {
+    (void)port_index;
     float total = 0.0f;
     for (const InputField& field : fields) {
-        total += get_input_analog(field);
+        total += get_input_analog(port_index, field);
     }
     return std::clamp(total, 0.0f, 1.0f);
 }
 
-bool get_input_digital(const InputField& field) {
+bool get_input_digital(int port_index, const InputField& field) {
+    (void)port_index;
     return is_pressed(field);
 }
 
-bool get_input_digital(const std::span<const InputField> fields) {
+bool get_input_digital(int port_index, const std::span<const InputField> fields) {
+    (void)port_index;
     return std::ranges::any_of(fields, [](const InputField& field) {
-        return get_input_digital(field);
+        return is_pressed(field);
     });
 }
 
@@ -88,17 +94,6 @@ void apply_joystick_deadzone(float x_in, float y_in, float* x_out, float* y_out)
 
 bool game_input_disabled() {
     return g_game_input_disabled;
-}
-
-static InputField s_dummy_binding{};
-
-InputField& get_input_binding(int port_index, GameInput input, size_t binding_index, InputDevice device) {
-    (void)port_index; (void)input; (void)binding_index; (void)device;
-    return s_dummy_binding;
-}
-
-void set_input_binding(int port_index, GameInput input, size_t binding_index, InputDevice device, InputField value) {
-    (void)port_index; (void)input; (void)binding_index; (void)device; (void)value;
 }
 
 } // namespace recomp

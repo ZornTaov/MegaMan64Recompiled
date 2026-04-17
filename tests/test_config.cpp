@@ -2,6 +2,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <iostream>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -28,6 +29,7 @@ static int failures = 0;
 #define CHECK(cond) \
     do { \
         if (!(cond)) { \
+            std::cerr << "CHECK failed at line " << __LINE__ << ": " #cond "\n"; \
             failures++; \
             return; \
         } \
@@ -68,18 +70,6 @@ std::vector<std::string> g_message_boxes{};
 } // anonymous namespace
 
 namespace recomp {
-
-static InputField s_dummy_binding{};
-
-InputField& get_input_binding(int port_index, GameInput input, size_t binding_index, InputDevice device) {
-    (void)port_index; (void)input; (void)binding_index; (void)device;
-    return s_dummy_binding;
-}
-
-void set_input_binding(int port_index, GameInput input, size_t binding_index, InputDevice device, InputField value) {
-    (void)port_index; (void)input; (void)binding_index; (void)device; (void)value;
-}
-
 const DefaultN64Mappings classic_n64_keyboard_mappings{};
 const DefaultN64Mappings classic_n64_controller_mappings{};
 
@@ -226,7 +216,13 @@ const std::string& get_input_enum_name(GameInput input) {
     return input_enum_names.at(static_cast<size_t>(input));
 }
 
-InputField& get_input_binding(GameInput input, size_t binding_index, InputDevice device) {
+InputField& get_input_binding(int port_index, GameInput input, size_t binding_index, InputDevice device) {
+    if (port_index != 0) {
+        static InputField dummy{};
+        dummy = {};
+        return dummy;
+    }
+
     input_mapping_array& device_mappings = (device == InputDevice::Controller) ? g_controller_bindings : g_keyboard_bindings;
     input_mapping& cur_input_mapping = device_mappings.at(static_cast<size_t>(input));
 
@@ -239,13 +235,25 @@ InputField& get_input_binding(GameInput input, size_t binding_index, InputDevice
     return dummy;
 }
 
-void set_input_binding(GameInput input, size_t binding_index, InputDevice device, InputField value) {
+void set_input_binding(int port_index, GameInput input, size_t binding_index, InputDevice device, InputField value) {
+    if (port_index != 0) {
+        return;
+    }
+
     input_mapping_array& device_mappings = (device == InputDevice::Controller) ? g_controller_bindings : g_keyboard_bindings;
     input_mapping& cur_input_mapping = device_mappings.at(static_cast<size_t>(input));
 
     if (binding_index < cur_input_mapping.size()) {
         cur_input_mapping[binding_index] = value;
     }
+}
+
+InputField& get_input_binding(GameInput input, size_t binding_index, InputDevice device) {
+    return get_input_binding(0, input, binding_index, device);
+}
+
+void set_input_binding(GameInput input, size_t binding_index, InputDevice device, InputField value) {
+    set_input_binding(0, input, binding_index, device, value);
 }
 
 BackgroundInputMode get_background_input_mode() {
