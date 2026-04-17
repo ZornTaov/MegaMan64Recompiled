@@ -70,10 +70,10 @@ namespace recomp {
     };
 
     void poll_inputs();
-    float get_input_analog(const InputField& field);
-    float get_input_analog(const std::span<const recomp::InputField> fields);
-    bool get_input_digital(const InputField& field);
-    bool get_input_digital(const std::span<const recomp::InputField> fields);
+    float get_input_analog(int port_index, const InputField& field);
+    float get_input_analog(int port_index, const std::span<const recomp::InputField> fields);
+    bool get_input_digital(int port_index, const InputField& field);
+    bool get_input_digital(int port_index, const std::span<const recomp::InputField> fields);
     void get_gyro_deltas(float* x, float* y);
     void get_mouse_deltas(float* x, float* y);
     void get_right_analog(float* x, float* y);
@@ -150,6 +150,8 @@ namespace recomp {
 
     extern const DefaultN64Mappings default_n64_keyboard_mappings;
     extern const DefaultN64Mappings default_n64_controller_mappings;
+    extern const DefaultN64Mappings classic_n64_keyboard_mappings;
+    extern const DefaultN64Mappings classic_n64_controller_mappings;
 
     constexpr size_t bindings_per_input = 2;
 

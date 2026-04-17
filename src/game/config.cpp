@@ -29,6 +29,8 @@ constexpr auto ar_default             = ultramodern::renderer::AspectRatio::Expa
 constexpr auto msaa_default           = ultramodern::renderer::Antialiasing::MSAA2X;
 constexpr auto rr_default             = ultramodern::renderer::RefreshRate::Display;
 constexpr auto hpfb_default           = ultramodern::renderer::HighPrecisionFramebuffer::Auto;
+constexpr auto tf_default             = ultramodern::renderer::TextureFiltering::ThreePoint;
+constexpr auto control_preset_default = ultramodern::renderer::ControlPreset::MegaMan64Optimized;
 constexpr int ds_default              = 1;
 constexpr int rr_manual_default       = 60;
 constexpr bool developer_mode_default = false;
@@ -117,6 +119,8 @@ namespace ultramodern {
             {"msaa_option",     config.msaa_option},
             {"rr_option",       config.rr_option},
             {"hpfb_option",     config.hpfb_option},
+            {"tf_option",       config.tf_option},
+            {"control_preset",  config.control_preset},
             {"rr_manual_value", config.rr_manual_value},
             {"developer_mode",  config.developer_mode},
         };
@@ -132,6 +136,8 @@ namespace ultramodern {
         config.msaa_option      = from_or_default(j, "msaa_option",     msaa_default);
         config.rr_option        = from_or_default(j, "rr_option",       rr_default);
         config.hpfb_option      = from_or_default(j, "hpfb_option",     hpfb_default);
+        config.tf_option        = from_or_default(j, "tf_option",       tf_default);
+        config.control_preset   = from_or_default(j, "control_preset",  ultramodern::renderer::ControlPreset::MegaMan64Optimized);
         config.rr_manual_value  = from_or_default(j, "rr_manual_value", rr_manual_default);
         config.developer_mode   = from_or_default(j, "developer_mode",  developer_mode_default);
     }
@@ -303,73 +309,94 @@ bool load_general_config(const std::filesystem::path& path) {
     return true;
 }
 
-void assign_mapping(recomp::InputDevice device, recomp::GameInput input, const std::vector<recomp::InputField>& value) {
+void assign_mapping(int port_index, recomp::InputDevice device, recomp::GameInput input, const std::vector<recomp::InputField>& value) {
     for (size_t binding_index = 0; binding_index < std::min(value.size(), recomp::bindings_per_input); binding_index++) {
-        recomp::set_input_binding(input, binding_index, device, value[binding_index]);
+        recomp::set_input_binding(port_index, input, binding_index, device, value[binding_index]);
     }
 };
 
 // same as assign_mapping, except will clear unassigned bindings if not in value
-void assign_mapping_complete(recomp::InputDevice device, recomp::GameInput input, const std::vector<recomp::InputField>& value) {
+void assign_mapping_complete(int port_index, recomp::InputDevice device, recomp::GameInput input, const std::vector<recomp::InputField>& value) {
     for (size_t binding_index = 0; binding_index < recomp::bindings_per_input; binding_index++) {
         if (binding_index >= value.size()) {
-            recomp::set_input_binding(input, binding_index, device, recomp::InputField{});
+            recomp::set_input_binding(port_index, input, binding_index, device, recomp::InputField{});
         } else {
-            recomp::set_input_binding(input, binding_index, device, value[binding_index]);
+            recomp::set_input_binding(port_index, input, binding_index, device, value[binding_index]);
         }
     }
 };
 
-void assign_all_mappings(recomp::InputDevice device, const recomp::DefaultN64Mappings& values) {
-    assign_mapping_complete(device, recomp::GameInput::A, values.a);
-    assign_mapping_complete(device, recomp::GameInput::B, values.b);
-    assign_mapping_complete(device, recomp::GameInput::Z, values.z);
-    assign_mapping_complete(device, recomp::GameInput::START, values.start);
-    assign_mapping_complete(device, recomp::GameInput::DPAD_UP, values.dpad_up);
-    assign_mapping_complete(device, recomp::GameInput::DPAD_DOWN, values.dpad_down);
-    assign_mapping_complete(device, recomp::GameInput::DPAD_LEFT, values.dpad_left);
-    assign_mapping_complete(device, recomp::GameInput::DPAD_RIGHT, values.dpad_right);
-    assign_mapping_complete(device, recomp::GameInput::L, values.l);
-    assign_mapping_complete(device, recomp::GameInput::R, values.r);
-    assign_mapping_complete(device, recomp::GameInput::C_UP, values.c_up);
-    assign_mapping_complete(device, recomp::GameInput::C_DOWN, values.c_down);
-    assign_mapping_complete(device, recomp::GameInput::C_LEFT, values.c_left);
-    assign_mapping_complete(device, recomp::GameInput::C_RIGHT, values.c_right);
+void assign_all_mappings(int port_index, recomp::InputDevice device, const recomp::DefaultN64Mappings& values) {
+    assign_mapping_complete(port_index, device, recomp::GameInput::A, values.a);
+    assign_mapping_complete(port_index, device, recomp::GameInput::B, values.b);
+    assign_mapping_complete(port_index, device, recomp::GameInput::Z, values.z);
+    assign_mapping_complete(port_index, device, recomp::GameInput::START, values.start);
+    assign_mapping_complete(port_index, device, recomp::GameInput::DPAD_UP, values.dpad_up);
+    assign_mapping_complete(port_index, device, recomp::GameInput::DPAD_DOWN, values.dpad_down);
+    assign_mapping_complete(port_index, device, recomp::GameInput::DPAD_LEFT, values.dpad_left);
+    assign_mapping_complete(port_index, device, recomp::GameInput::DPAD_RIGHT, values.dpad_right);
+    assign_mapping_complete(port_index, device, recomp::GameInput::L, values.l);
+    assign_mapping_complete(port_index, device, recomp::GameInput::R, values.r);
+    assign_mapping_complete(port_index, device, recomp::GameInput::C_UP, values.c_up);
+    assign_mapping_complete(port_index, device, recomp::GameInput::C_DOWN, values.c_down);
+    assign_mapping_complete(port_index, device, recomp::GameInput::C_LEFT, values.c_left);
+    assign_mapping_complete(port_index, device, recomp::GameInput::C_RIGHT, values.c_right);
 
-    assign_mapping_complete(device, recomp::GameInput::X_AXIS_NEG, values.analog_left);
-    assign_mapping_complete(device, recomp::GameInput::X_AXIS_POS, values.analog_right);
-    assign_mapping_complete(device, recomp::GameInput::Y_AXIS_NEG, values.analog_down);
-    assign_mapping_complete(device, recomp::GameInput::Y_AXIS_POS, values.analog_up);
+    assign_mapping_complete(port_index, device, recomp::GameInput::X_AXIS_NEG, values.analog_left);
+    assign_mapping_complete(port_index, device, recomp::GameInput::X_AXIS_POS, values.analog_right);
+    assign_mapping_complete(port_index, device, recomp::GameInput::Y_AXIS_NEG, values.analog_down);
+    assign_mapping_complete(port_index, device, recomp::GameInput::Y_AXIS_POS, values.analog_up);
 
-    assign_mapping_complete(device, recomp::GameInput::TOGGLE_MENU, values.toggle_menu);
-    assign_mapping_complete(device, recomp::GameInput::ACCEPT_MENU, values.accept_menu);
-    assign_mapping_complete(device, recomp::GameInput::APPLY_MENU, values.apply_menu);
+    assign_mapping_complete(port_index, device, recomp::GameInput::TOGGLE_MENU, values.toggle_menu);
+    assign_mapping_complete(port_index, device, recomp::GameInput::ACCEPT_MENU, values.accept_menu);
+    assign_mapping_complete(port_index, device, recomp::GameInput::APPLY_MENU, values.apply_menu);
 };
 
 void zelda64::reset_input_bindings() {
-    assign_all_mappings(recomp::InputDevice::Keyboard, recomp::default_n64_keyboard_mappings);
-    assign_all_mappings(recomp::InputDevice::Controller, recomp::default_n64_controller_mappings);
+    for (int port = 0; port < 4; port++) {
+        assign_all_mappings(port, recomp::InputDevice::Keyboard, recomp::default_n64_keyboard_mappings);
+        assign_all_mappings(port, recomp::InputDevice::Controller, recomp::default_n64_controller_mappings);
+    }
 }
 
 void zelda64::reset_cont_input_bindings() {
-    assign_all_mappings(recomp::InputDevice::Controller, recomp::default_n64_controller_mappings);
+    for (int port = 0; port < 4; port++) {
+        assign_all_mappings(port, recomp::InputDevice::Controller, recomp::default_n64_controller_mappings);
+    }
 }
 
 void zelda64::reset_kb_input_bindings() {
-    assign_all_mappings(recomp::InputDevice::Keyboard, recomp::default_n64_keyboard_mappings);
+    for (int port = 0; port < 4; port++) {
+        assign_all_mappings(port, recomp::InputDevice::Keyboard, recomp::default_n64_keyboard_mappings);
+    }
 }
 
 void zelda64::reset_single_input_binding(recomp::InputDevice device, recomp::GameInput input) {
-    assign_mapping_complete(
-        device,
-        input,
-        recomp::get_default_mapping_for_input(
-            device == recomp::InputDevice::Keyboard ?
-                recomp::default_n64_keyboard_mappings :
-                recomp::default_n64_controller_mappings,
-            input
-        )
-    );
+    for (int port = 0; port < 4; port++) {
+        assign_mapping_complete(
+            port,
+            device,
+            input,
+            recomp::get_default_mapping_for_input(
+                device == recomp::InputDevice::Keyboard ?
+                    recomp::default_n64_keyboard_mappings :
+                    recomp::default_n64_controller_mappings,
+                input
+            )
+        );
+    }
+}
+
+void zelda64::apply_control_preset(ultramodern::renderer::ControlPreset preset) {
+    for (int port = 0; port < 4; port++) {
+        if (preset == ultramodern::renderer::ControlPreset::ClassicN64) {
+            assign_all_mappings(port, recomp::InputDevice::Keyboard, recomp::classic_n64_keyboard_mappings);
+            assign_all_mappings(port, recomp::InputDevice::Controller, recomp::classic_n64_controller_mappings);
+        } else { // MegaMan64Optimized
+            assign_all_mappings(port, recomp::InputDevice::Keyboard, recomp::default_n64_keyboard_mappings);
+            assign_all_mappings(port, recomp::InputDevice::Controller, recomp::default_n64_controller_mappings);
+        }
+    }
 }
 
 void reset_graphics_options() {
@@ -382,6 +409,8 @@ void reset_graphics_options() {
     new_config.msaa_option = msaa_default;
     new_config.rr_option = rr_default;
     new_config.hpfb_option = hpfb_default;
+    new_config.tf_option = tf_default;
+    new_config.control_preset = control_preset_default;
     new_config.rr_manual_value = rr_manual_default;
     new_config.developer_mode = developer_mode_default;
     ultramodern::renderer::set_graphics_config(new_config);
@@ -405,32 +434,37 @@ bool load_graphics_config(const std::filesystem::path& path) {
     return true;
 }
 
-void add_input_bindings(nlohmann::json& out, recomp::GameInput input, recomp::InputDevice device) {
+void add_input_bindings(nlohmann::json& out, int port_index, recomp::GameInput input, recomp::InputDevice device) {
     const std::string& input_name = recomp::get_input_enum_name(input);
     nlohmann::json& out_array = out[input_name];
     out_array = nlohmann::json::array();
     for (size_t binding_index = 0; binding_index < recomp::bindings_per_input; binding_index++) {
-        out_array[binding_index] = recomp::get_input_binding(input, binding_index, device);
+        out_array[binding_index] = recomp::get_input_binding(port_index, input, binding_index, device);
     }
 };
 
 bool save_controls_config(const std::filesystem::path& path) {
     nlohmann::json config_json{};
 
-    config_json["keyboard"] = {};
-    config_json["controller"] = {};
+    for (int port = 0; port < 4; port++) {
+        std::string kb_key = "keyboard" + (port == 0 ? "" : std::to_string(port));
+        std::string cont_key = "controller" + (port == 0 ? "" : std::to_string(port));
+        
+        config_json[kb_key] = {};
+        config_json[cont_key] = {};
 
-    for (size_t i = 0; i < recomp::get_num_inputs(); i++) {
-        recomp::GameInput cur_input = static_cast<recomp::GameInput>(i);
+        for (size_t i = 0; i < recomp::get_num_inputs(); i++) {
+            recomp::GameInput cur_input = static_cast<recomp::GameInput>(i);
 
-        add_input_bindings(config_json["keyboard"], cur_input, recomp::InputDevice::Keyboard);
-        add_input_bindings(config_json["controller"], cur_input, recomp::InputDevice::Controller);
+            add_input_bindings(config_json[kb_key], port, cur_input, recomp::InputDevice::Keyboard);
+            add_input_bindings(config_json[cont_key], port, cur_input, recomp::InputDevice::Controller);
+        }
     }
 
     return save_json_with_backups(path, config_json);
 }
 
-bool load_input_device_from_json(const nlohmann::json& config_json, recomp::InputDevice device, const std::string& key) {
+bool load_input_device_from_json(int port_index, const nlohmann::json& config_json, recomp::InputDevice device, const std::string& key) {
     // Check if the json object for the given key exists.
     auto find_it = config_json.find(key);
     if (find_it == config_json.end()) {
@@ -447,6 +481,7 @@ bool load_input_device_from_json(const nlohmann::json& config_json, recomp::Inpu
         auto find_input_it = mappings_json.find(input_name);
         if (find_input_it == mappings_json.end() || !find_input_it->is_array()) {
             assign_mapping_complete(
+                port_index,
                 device,
                 cur_input,
                 recomp::get_default_mapping_for_input(
@@ -470,7 +505,7 @@ bool load_input_device_from_json(const nlohmann::json& config_json, recomp::Inpu
             loaded_bindings.push_back(cur_field);
         }
 
-        assign_mapping_complete(device, cur_input, loaded_bindings);
+        assign_mapping_complete(port_index, device, cur_input, loaded_bindings);
     }
 
     return true;
@@ -482,12 +517,17 @@ bool load_controls_config(const std::filesystem::path& path) {
         return false;
     }
 
-    if (!load_input_device_from_json(config_json, recomp::InputDevice::Keyboard, "keyboard")) {
-        assign_all_mappings(recomp::InputDevice::Keyboard, recomp::default_n64_keyboard_mappings);
-    }
+    for (int port = 0; port < 4; port++) {
+        std::string kb_key = "keyboard" + (port == 0 ? "" : std::to_string(port));
+        std::string cont_key = "controller" + (port == 0 ? "" : std::to_string(port));
 
-    if (!load_input_device_from_json(config_json, recomp::InputDevice::Controller, "controller")) {
-        assign_all_mappings(recomp::InputDevice::Controller, recomp::default_n64_controller_mappings);
+        if (!load_input_device_from_json(port, config_json, recomp::InputDevice::Keyboard, kb_key)) {
+            assign_all_mappings(port, recomp::InputDevice::Keyboard, recomp::default_n64_keyboard_mappings);
+        }
+
+        if (!load_input_device_from_json(port, config_json, recomp::InputDevice::Controller, cont_key)) {
+            assign_all_mappings(port, recomp::InputDevice::Controller, recomp::default_n64_controller_mappings);
+        }
     }
     return true;
 }

@@ -181,6 +181,17 @@ void set_application_user_config(RT64::Application* application, const ultramode
     application->userConfig.refreshRate = to_rt64(config.rr_option);
     application->userConfig.refreshRateTarget = config.rr_manual_value;
     application->userConfig.internalColorFormat = to_rt64(config.hpfb_option);
+    
+    // Set texture filtering based on config
+    switch (config.tf_option) {
+        default:
+        case ultramodern::renderer::TextureFiltering::ThreePoint:
+            application->userConfig.threePointFiltering = true;
+            break;
+        case ultramodern::renderer::TextureFiltering::Bilinear:
+            application->userConfig.threePointFiltering = false;
+            break;
+    }
 }
 
 ultramodern::renderer::SetupResult map_setup_result(RT64::Application::SetupResult rt64_result) {
@@ -315,7 +326,7 @@ zelda64::renderer::RT64Context::RT64Context(uint8_t* rdram, ultramodern::rendere
 
 zelda64::renderer::RT64Context::~RT64Context() = default;
 
-void zelda64::renderer::RT64Context::send_dl(const OSTask* task) {
+void zelda64::renderer::RT64Context::check_texture_pack_actions() {
     bool packs_disabled = false;
     TexturePackAction cur_action;
     while (texture_pack_action_queue.try_dequeue(cur_action)) {
@@ -326,7 +337,6 @@ void zelda64::renderer::RT64Context::send_dl(const OSTask* task) {
             },
             [&](TexturePackEnableAction& to_enable) {
                 enabled_texture_packs.insert(to_enable.path);
-                // Load the pack now if no packs have been disabled.
                 if (!packs_disabled) {
                     app->textureCache->loadReplacementDirectory(to_enable.path);
                 }
@@ -334,21 +344,19 @@ void zelda64::renderer::RT64Context::send_dl(const OSTask* task) {
         }, cur_action);
     }
 
-    // If any packs were disabled, unload all packs and load all the active ones.
     if (packs_disabled) {
         app->textureCache->clearReplacementDirectories();
         for (const std::filesystem::path& cur_pack_path : enabled_texture_packs) {
             app->textureCache->loadReplacementDirectory(cur_pack_path);
         }
     }
+}
+
+void zelda64::renderer::RT64Context::send_dl(const OSTask* task) {
+    check_texture_pack_actions();
 
     app->state->rsp->reset();
     app->interpreter->loadUCodeGBI(task->t.ucode & 0x3FFFFFF, task->t.ucode_data & 0x3FFFFFF, true);
-
-    // Enable RT64 extended GBI mode and set the refresh rate before processing display lists.
-    app->state->enableExtendedGBI(RT64_EXTENDED_OPCODE);
-    app->state->setRefreshRate(ultramodern::get_target_framerate(30));
-
     app->processDisplayLists(app->core.RDRAM, task->t.data_ptr & 0x3FFFFFF, 0, true);
 }
 

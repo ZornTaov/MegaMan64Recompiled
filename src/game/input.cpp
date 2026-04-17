@@ -23,6 +23,7 @@ static struct {
     std::atomic_int32_t mouse_wheel_pos = 0;
     std::mutex cur_controllers_mutex;
     std::vector<SDL_GameController*> cur_controllers{};
+    std::array<SDL_GameController*, 4> port_to_controller{};
     std::unordered_map<SDL_JoystickID, ControllerState> controller_states;
     
     std::array<float, 2> rotation_delta{};
@@ -176,8 +177,8 @@ bool sdl_event_filter(void* userdata, SDL_Event* event) {
         break;
     case SDL_EventType::SDL_CONTROLLERBUTTONDOWN:
         if (scanning_device != recomp::InputDevice::COUNT) {
-            auto menuToggleBinding0 = recomp::get_input_binding(recomp::GameInput::TOGGLE_MENU, 0, recomp::InputDevice::Controller);
-            auto menuToggleBinding1 = recomp::get_input_binding(recomp::GameInput::TOGGLE_MENU, 1, recomp::InputDevice::Controller);
+            auto menuToggleBinding0 = recomp::get_input_binding(0, recomp::GameInput::TOGGLE_MENU, 0, recomp::InputDevice::Controller);
+            auto menuToggleBinding1 = recomp::get_input_binding(0, recomp::GameInput::TOGGLE_MENU, 1, recomp::InputDevice::Controller);
             // note - magic number: 0 is InputType::None
             if ((menuToggleBinding0.input_type != 0 && event->cbutton.button == menuToggleBinding0.input_id) ||
                 (menuToggleBinding1.input_type != 0 && event->cbutton.button == menuToggleBinding1.input_id)) {
@@ -316,36 +317,39 @@ constexpr SDL_GameControllerButton SDL_CONTROLLER_BUTTON_EAST = SDL_CONTROLLER_B
 constexpr SDL_GameControllerButton SDL_CONTROLLER_BUTTON_WEST = SDL_CONTROLLER_BUTTON_X;
 constexpr SDL_GameControllerButton SDL_CONTROLLER_BUTTON_NORTH = SDL_CONTROLLER_BUTTON_Y;
 
+// Mega Man 64 optimized keyboard mappings  
+// WASD for movement, arrow keys for camera, space for jump, shift for shoot
+// Q for lock-on (Z), E for weapon switch (L), R for dash (R)
 const recomp::DefaultN64Mappings recomp::default_n64_keyboard_mappings = {
     .a = {
-        {.input_type = (uint32_t)InputType::Keyboard, .input_id = SDL_SCANCODE_SPACE}
+        {.input_type = (uint32_t)InputType::Keyboard, .input_id = SDL_SCANCODE_SPACE} // Jump
     },
     .b = {
-        {.input_type = (uint32_t)InputType::Keyboard, .input_id = SDL_SCANCODE_LSHIFT}
+        {.input_type = (uint32_t)InputType::Keyboard, .input_id = SDL_SCANCODE_LSHIFT} // Shoot
     },
     .l = {
-        {.input_type = (uint32_t)InputType::Keyboard, .input_id = SDL_SCANCODE_E}
+        {.input_type = (uint32_t)InputType::Keyboard, .input_id = SDL_SCANCODE_E} // Weapon switch
     },
     .r = {
-        {.input_type = (uint32_t)InputType::Keyboard, .input_id = SDL_SCANCODE_R}
+        {.input_type = (uint32_t)InputType::Keyboard, .input_id = SDL_SCANCODE_R} // Dash
     },
     .z = {
-        {.input_type = (uint32_t)InputType::Keyboard, .input_id = SDL_SCANCODE_Q}
+        {.input_type = (uint32_t)InputType::Keyboard, .input_id = SDL_SCANCODE_Q} // Lock-on
     },
     .start = {
         {.input_type = (uint32_t)InputType::Keyboard, .input_id = SDL_SCANCODE_RETURN}
     },
     .c_left = {
-        {.input_type = (uint32_t)InputType::Keyboard, .input_id = SDL_SCANCODE_LEFT}
+        {.input_type = (uint32_t)InputType::Keyboard, .input_id = SDL_SCANCODE_LEFT} // Camera
     },
     .c_right = {
-        {.input_type = (uint32_t)InputType::Keyboard, .input_id = SDL_SCANCODE_RIGHT}
+        {.input_type = (uint32_t)InputType::Keyboard, .input_id = SDL_SCANCODE_RIGHT} // Camera
     },
     .c_up = {
-        {.input_type = (uint32_t)InputType::Keyboard, .input_id = SDL_SCANCODE_UP}
+        {.input_type = (uint32_t)InputType::Keyboard, .input_id = SDL_SCANCODE_UP} // Camera
     },
     .c_down = {
-        {.input_type = (uint32_t)InputType::Keyboard, .input_id = SDL_SCANCODE_DOWN}
+        {.input_type = (uint32_t)InputType::Keyboard, .input_id = SDL_SCANCODE_DOWN} // Camera
     },
     .dpad_left = {
         {.input_type = (uint32_t)InputType::Keyboard, .input_id = SDL_SCANCODE_J}
@@ -360,16 +364,16 @@ const recomp::DefaultN64Mappings recomp::default_n64_keyboard_mappings = {
         {.input_type = (uint32_t)InputType::Keyboard, .input_id = SDL_SCANCODE_K}
     },
     .analog_left = {
-        {.input_type = (uint32_t)InputType::Keyboard, .input_id = SDL_SCANCODE_A}
+        {.input_type = (uint32_t)InputType::Keyboard, .input_id = SDL_SCANCODE_A} // Movement
     },
     .analog_right = {
-        {.input_type = (uint32_t)InputType::Keyboard, .input_id = SDL_SCANCODE_D}
+        {.input_type = (uint32_t)InputType::Keyboard, .input_id = SDL_SCANCODE_D} // Movement
     },
     .analog_up = {
-        {.input_type = (uint32_t)InputType::Keyboard, .input_id = SDL_SCANCODE_W}
+        {.input_type = (uint32_t)InputType::Keyboard, .input_id = SDL_SCANCODE_W} // Movement
     },
     .analog_down = {
-        {.input_type = (uint32_t)InputType::Keyboard, .input_id = SDL_SCANCODE_S}
+        {.input_type = (uint32_t)InputType::Keyboard, .input_id = SDL_SCANCODE_S} // Movement
     },
     .toggle_menu = {
         {.input_type = (uint32_t)InputType::Keyboard, .input_id = SDL_SCANCODE_ESCAPE}
@@ -382,40 +386,175 @@ const recomp::DefaultN64Mappings recomp::default_n64_keyboard_mappings = {
     }
 };
 
-const recomp::DefaultN64Mappings recomp::default_n64_controller_mappings = {
+// Classic N64 keyboard mappings (more traditional layout)
+const recomp::DefaultN64Mappings recomp::classic_n64_keyboard_mappings = {
     .a = {
-        {.input_type = (uint32_t)InputType::ControllerDigital, .input_id = SDL_CONTROLLER_BUTTON_SOUTH},
+        {.input_type = (uint32_t)InputType::Keyboard, .input_id = SDL_SCANCODE_X} // Jump
     },
     .b = {
-        {.input_type = (uint32_t)InputType::ControllerDigital, .input_id = SDL_CONTROLLER_BUTTON_WEST},
+        {.input_type = (uint32_t)InputType::Keyboard, .input_id = SDL_SCANCODE_Z} // Shoot
     },
     .l = {
-        {.input_type = (uint32_t)InputType::ControllerDigital, .input_id = SDL_CONTROLLER_BUTTON_LEFTSHOULDER},
+        {.input_type = (uint32_t)InputType::Keyboard, .input_id = SDL_SCANCODE_A} // Weapon switch
     },
     .r = {
-        {.input_type = (uint32_t)InputType::ControllerAnalog, .input_id = SDL_CONTROLLER_AXIS_TRIGGERRIGHT + 1},
+        {.input_type = (uint32_t)InputType::Keyboard, .input_id = SDL_SCANCODE_S} // Dash
     },
     .z = {
-        {.input_type = (uint32_t)InputType::ControllerAnalog, .input_id = SDL_CONTROLLER_AXIS_TRIGGERLEFT + 1},
+        {.input_type = (uint32_t)InputType::Keyboard, .input_id = SDL_SCANCODE_D} // Lock-on
+    },
+    .start = {
+        {.input_type = (uint32_t)InputType::Keyboard, .input_id = SDL_SCANCODE_RETURN}
+    },
+    .c_left = {
+        {.input_type = (uint32_t)InputType::Keyboard, .input_id = SDL_SCANCODE_J} // Camera
+    },
+    .c_right = {
+        {.input_type = (uint32_t)InputType::Keyboard, .input_id = SDL_SCANCODE_L} // Camera
+    },
+    .c_up = {
+        {.input_type = (uint32_t)InputType::Keyboard, .input_id = SDL_SCANCODE_I} // Camera
+    },
+    .c_down = {
+        {.input_type = (uint32_t)InputType::Keyboard, .input_id = SDL_SCANCODE_K} // Camera
+    },
+    .dpad_left = {
+        {.input_type = (uint32_t)InputType::Keyboard, .input_id = SDL_SCANCODE_LEFT}
+    },
+    .dpad_right = {
+        {.input_type = (uint32_t)InputType::Keyboard, .input_id = SDL_SCANCODE_RIGHT}
+    },
+    .dpad_up = {
+        {.input_type = (uint32_t)InputType::Keyboard, .input_id = SDL_SCANCODE_UP}
+    },
+    .dpad_down = {
+        {.input_type = (uint32_t)InputType::Keyboard, .input_id = SDL_SCANCODE_DOWN}
+    },
+    .analog_left = {
+        {.input_type = (uint32_t)InputType::Keyboard, .input_id = SDL_SCANCODE_F} // Movement
+    },
+    .analog_right = {
+        {.input_type = (uint32_t)InputType::Keyboard, .input_id = SDL_SCANCODE_H} // Movement
+    },
+    .analog_up = {
+        {.input_type = (uint32_t)InputType::Keyboard, .input_id = SDL_SCANCODE_T} // Movement
+    },
+    .analog_down = {
+        {.input_type = (uint32_t)InputType::Keyboard, .input_id = SDL_SCANCODE_G} // Movement
+    },
+    .toggle_menu = {
+        {.input_type = (uint32_t)InputType::Keyboard, .input_id = SDL_SCANCODE_ESCAPE}
+    },
+    .accept_menu = {
+        {.input_type = (uint32_t)InputType::Keyboard, .input_id = SDL_SCANCODE_RETURN}
+    },
+    .apply_menu = {
+        {.input_type = (uint32_t)InputType::Keyboard, .input_id = SDL_SCANCODE_F1}
+    }
+};
+
+// Classic N64 controller mappings (closer to original N64 controller layout)
+const recomp::DefaultN64Mappings recomp::classic_n64_controller_mappings = {
+    .a = {
+        {.input_type = (uint32_t)InputType::ControllerDigital, .input_id = SDL_CONTROLLER_BUTTON_SOUTH}, // Jump
+    },
+    .b = {
+        {.input_type = (uint32_t)InputType::ControllerDigital, .input_id = SDL_CONTROLLER_BUTTON_EAST}, // Shoot
+    },
+    .l = {
+        {.input_type = (uint32_t)InputType::ControllerAnalog, .input_id = SDL_CONTROLLER_AXIS_TRIGGERLEFT + 1}, // Weapon switch
+    },
+    .r = {
+        {.input_type = (uint32_t)InputType::ControllerAnalog, .input_id = SDL_CONTROLLER_AXIS_TRIGGERRIGHT + 1}, // Dash
+    },
+    .z = {
+        {.input_type = (uint32_t)InputType::ControllerDigital, .input_id = SDL_CONTROLLER_BUTTON_RIGHTSHOULDER}, // Lock-on
     },
     .start = {
         {.input_type = (uint32_t)InputType::ControllerDigital, .input_id = SDL_CONTROLLER_BUTTON_START},
     },
     .c_left = {
-        {.input_type = (uint32_t)InputType::ControllerAnalog, .input_id = -(SDL_CONTROLLER_AXIS_RIGHTX + 1)},
-        {.input_type = (uint32_t)InputType::ControllerDigital, .input_id = SDL_CONTROLLER_BUTTON_NORTH},
+        {.input_type = (uint32_t)InputType::ControllerDigital, .input_id = SDL_CONTROLLER_BUTTON_DPAD_LEFT}, // Camera
     },
     .c_right = {
-        {.input_type = (uint32_t)InputType::ControllerAnalog, .input_id = SDL_CONTROLLER_AXIS_RIGHTX + 1},
-        {.input_type = (uint32_t)InputType::ControllerDigital, .input_id = SDL_CONTROLLER_BUTTON_EAST},
+        {.input_type = (uint32_t)InputType::ControllerDigital, .input_id = SDL_CONTROLLER_BUTTON_DPAD_RIGHT}, // Camera
     },
     .c_up = {
-        {.input_type = (uint32_t)InputType::ControllerAnalog, .input_id = -(SDL_CONTROLLER_AXIS_RIGHTY + 1)},
-        {.input_type = (uint32_t)InputType::ControllerDigital, .input_id = SDL_CONTROLLER_BUTTON_RIGHTSTICK},
+        {.input_type = (uint32_t)InputType::ControllerDigital, .input_id = SDL_CONTROLLER_BUTTON_DPAD_UP}, // Camera
     },
     .c_down = {
-        {.input_type = (uint32_t)InputType::ControllerAnalog, .input_id = SDL_CONTROLLER_AXIS_RIGHTY + 1},
-        {.input_type = (uint32_t)InputType::ControllerDigital, .input_id = SDL_CONTROLLER_BUTTON_RIGHTSHOULDER},
+        {.input_type = (uint32_t)InputType::ControllerDigital, .input_id = SDL_CONTROLLER_BUTTON_DPAD_DOWN}, // Camera
+    },
+    .dpad_left = {
+        {.input_type = (uint32_t)InputType::ControllerDigital, .input_id = SDL_CONTROLLER_BUTTON_LEFTSHOULDER}, // Alternative mapping
+    },
+    .dpad_right = {
+        {.input_type = (uint32_t)InputType::ControllerDigital, .input_id = SDL_CONTROLLER_BUTTON_RIGHTSHOULDER}, // Alternative mapping
+    },
+    .dpad_up = {
+        {.input_type = (uint32_t)InputType::ControllerDigital, .input_id = SDL_CONTROLLER_BUTTON_Y}, // Alternative mapping
+    },
+    .dpad_down = {
+        {.input_type = (uint32_t)InputType::ControllerDigital, .input_id = SDL_CONTROLLER_BUTTON_A}, // Alternative mapping
+    },
+    .analog_left = {
+        {.input_type = (uint32_t)InputType::ControllerAnalog, .input_id = -(SDL_CONTROLLER_AXIS_LEFTX + 1)}, // Movement
+    },
+    .analog_right = {
+        {.input_type = (uint32_t)InputType::ControllerAnalog, .input_id = SDL_CONTROLLER_AXIS_LEFTX + 1}, // Movement
+    },
+    .analog_up = {
+        {.input_type = (uint32_t)InputType::ControllerAnalog, .input_id = -(SDL_CONTROLLER_AXIS_LEFTY + 1)}, // Movement
+    },
+    .analog_down = {
+        {.input_type = (uint32_t)InputType::ControllerAnalog, .input_id = SDL_CONTROLLER_AXIS_LEFTY + 1}, // Movement
+    },
+    .toggle_menu = {
+        {.input_type = (uint32_t)InputType::ControllerDigital, .input_id = SDL_CONTROLLER_BUTTON_BACK}
+    },
+    .accept_menu = {
+        {.input_type = (uint32_t)InputType::ControllerDigital, .input_id = SDL_CONTROLLER_BUTTON_A}
+    },
+    .apply_menu = {
+        {.input_type = (uint32_t)InputType::ControllerDigital, .input_id = SDL_CONTROLLER_BUTTON_X}
+    }
+};
+
+// Mega Man 64 optimized controller mappings
+// R (dash) is mapped to right shoulder for quick access (important for mobility)
+// Z (lock-on) is mapped to left trigger
+// L (weapon switch) is mapped to left shoulder
+// C-buttons for camera on right analog stick
+const recomp::DefaultN64Mappings recomp::default_n64_controller_mappings = {
+    .a = {
+        {.input_type = (uint32_t)InputType::ControllerDigital, .input_id = SDL_CONTROLLER_BUTTON_SOUTH}, // Jump
+    },
+    .b = {
+        {.input_type = (uint32_t)InputType::ControllerDigital, .input_id = SDL_CONTROLLER_BUTTON_WEST}, // Shoot
+    },
+    .l = {
+        {.input_type = (uint32_t)InputType::ControllerDigital, .input_id = SDL_CONTROLLER_BUTTON_LEFTSHOULDER}, // Weapon switch
+    },
+    .r = {
+        {.input_type = (uint32_t)InputType::ControllerDigital, .input_id = SDL_CONTROLLER_BUTTON_RIGHTSHOULDER}, // Dash (digital for quick access)
+    },
+    .z = {
+        {.input_type = (uint32_t)InputType::ControllerAnalog, .input_id = SDL_CONTROLLER_AXIS_TRIGGERLEFT + 1}, // Lock-on
+    },
+    .start = {
+        {.input_type = (uint32_t)InputType::ControllerDigital, .input_id = SDL_CONTROLLER_BUTTON_START},
+    },
+    .c_left = {
+        {.input_type = (uint32_t)InputType::ControllerAnalog, .input_id = -(SDL_CONTROLLER_AXIS_RIGHTX + 1)}, // Camera
+    },
+    .c_right = {
+        {.input_type = (uint32_t)InputType::ControllerAnalog, .input_id = SDL_CONTROLLER_AXIS_RIGHTX + 1}, // Camera
+    },
+    .c_up = {
+        {.input_type = (uint32_t)InputType::ControllerAnalog, .input_id = -(SDL_CONTROLLER_AXIS_RIGHTY + 1)}, // Camera
+    },
+    .c_down = {
+        {.input_type = (uint32_t)InputType::ControllerAnalog, .input_id = SDL_CONTROLLER_AXIS_RIGHTY + 1}, // Camera
     },
     .dpad_left = {
         {.input_type = (uint32_t)InputType::ControllerDigital, .input_id = SDL_CONTROLLER_BUTTON_DPAD_LEFT},
@@ -430,16 +569,16 @@ const recomp::DefaultN64Mappings recomp::default_n64_controller_mappings = {
         {.input_type = (uint32_t)InputType::ControllerDigital, .input_id = SDL_CONTROLLER_BUTTON_DPAD_DOWN},
     },
     .analog_left = {
-        {.input_type = (uint32_t)InputType::ControllerAnalog, .input_id = -(SDL_CONTROLLER_AXIS_LEFTX + 1)},
+        {.input_type = (uint32_t)InputType::ControllerAnalog, .input_id = -(SDL_CONTROLLER_AXIS_LEFTX + 1)}, // Movement
     },
     .analog_right = {
-        {.input_type = (uint32_t)InputType::ControllerAnalog, .input_id = SDL_CONTROLLER_AXIS_LEFTX + 1},
+        {.input_type = (uint32_t)InputType::ControllerAnalog, .input_id = SDL_CONTROLLER_AXIS_LEFTX + 1}, // Movement
     },
     .analog_up = {
-        {.input_type = (uint32_t)InputType::ControllerAnalog, .input_id = -(SDL_CONTROLLER_AXIS_LEFTY + 1)},
+        {.input_type = (uint32_t)InputType::ControllerAnalog, .input_id = -(SDL_CONTROLLER_AXIS_LEFTY + 1)}, // Movement
     },
     .analog_down = {
-        {.input_type = (uint32_t)InputType::ControllerAnalog, .input_id = SDL_CONTROLLER_AXIS_LEFTY + 1},
+        {.input_type = (uint32_t)InputType::ControllerAnalog, .input_id = SDL_CONTROLLER_AXIS_LEFTY + 1}, // Movement
     },
     .toggle_menu = {
         {.input_type = (uint32_t)InputType::ControllerDigital, .input_id = SDL_CONTROLLER_BUTTON_BACK},
@@ -453,14 +592,32 @@ const recomp::DefaultN64Mappings recomp::default_n64_controller_mappings = {
     }
 };
 
+
+
 void recomp::poll_inputs() {
     InputState.keys = SDL_GetKeyboardState(&InputState.numkeys);
     InputState.keymod = SDL_GetModState();
 
     {
         std::lock_guard lock{ InputState.cur_controllers_mutex };
-        mm64::input_hotplug::rebuild_connected_controllers(
-            InputState.cur_controllers, InputState.controller_states);
+        {
+            std::lock_guard lock{ InputState.cur_controllers_mutex };
+            InputState.cur_controllers.clear();
+            InputState.port_to_controller.fill(nullptr);
+            
+            // Get all connected controllers and map them to ports in order.
+            int num_joysticks = SDL_NumJoysticks();
+            int port_count = 0;
+            for (int i = 0; i < num_joysticks && port_count < 4; i++) {
+                if (SDL_IsGameController(i)) {
+                    SDL_GameController* controller = SDL_GameControllerOpen(i);
+                    if (controller) {
+                        InputState.cur_controllers.push_back(controller);
+                        InputState.port_to_controller[port_count++] = controller;
+                    }
+                }
+            }
+        }
     }
 
     // Read the deltas while resetting them to zero.
@@ -534,14 +691,21 @@ void recomp::update_rumble() {
     }
 }
 
-bool controller_button_state(int32_t input_id) {
+bool controller_button_state(int port_index, int32_t input_id) {
     if (input_id >= 0 && input_id < SDL_GameControllerButton::SDL_CONTROLLER_BUTTON_MAX) {
         SDL_GameControllerButton button = (SDL_GameControllerButton)input_id;
         bool ret = false;
         {
             std::lock_guard lock{ InputState.cur_controllers_mutex };
-            for (const auto& controller : InputState.cur_controllers) {
-                ret = ret || (SDL_GameControllerGetButton(controller, button) != 0);
+            if (port_index >= 0 && port_index < 4) {
+                SDL_GameController* controller = InputState.port_to_controller[port_index];
+                if (controller) {
+                    ret = (SDL_GameControllerGetButton(controller, button) != 0);
+                }
+            } else {
+                for (const auto& controller : InputState.cur_controllers) {
+                    ret = ret || (SDL_GameControllerGetButton(controller, button) != 0);
+                }
             }
         }
 
@@ -552,26 +716,37 @@ bool controller_button_state(int32_t input_id) {
 
 static std::atomic_bool right_analog_suppressed = false;
 
-float controller_axis_state(int32_t input_id, bool allow_suppression) {
+float controller_axis_state(int port_index, int32_t input_id, bool allow_suppression) {
     if (abs(input_id) - 1 < SDL_GameControllerAxis::SDL_CONTROLLER_AXIS_MAX) {
         SDL_GameControllerAxis axis = (SDL_GameControllerAxis)(abs(input_id) - 1);
         bool negative_range = input_id < 0;
         float ret = 0.0f;
 
+        auto process_controller = [&](SDL_GameController* controller) {
+            float cur_val = SDL_GameControllerGetAxis(controller, axis) * (1/32768.0f);
+            if (negative_range) {
+                cur_val = -cur_val;
+            }
+
+            // Check if this input is a right analog axis and suppress it accordingly.
+            if (allow_suppression && right_analog_suppressed.load() &&
+                (axis == SDL_GameControllerAxis::SDL_CONTROLLER_AXIS_RIGHTX || axis == SDL_GameControllerAxis::SDL_CONTROLLER_AXIS_RIGHTY)) {
+                cur_val = 0;
+            }
+            return std::clamp(cur_val, 0.0f, 1.0f);
+        };
+
         {
             std::lock_guard lock{ InputState.cur_controllers_mutex };
-            for (const auto& controller : InputState.cur_controllers) {
-                float cur_val = SDL_GameControllerGetAxis(controller, axis) * (1/32768.0f);
-                if (negative_range) {
-                    cur_val = -cur_val;
+            if (port_index >= 0 && port_index < 4) {
+                SDL_GameController* controller = InputState.port_to_controller[port_index];
+                if (controller) {
+                    ret = process_controller(controller);
                 }
-
-                // Check if this input is a right analog axis and suppress it accordingly.
-                if (allow_suppression && right_analog_suppressed.load() &&
-                    (axis == SDL_GameControllerAxis::SDL_CONTROLLER_AXIS_RIGHTX || axis == SDL_GameControllerAxis::SDL_CONTROLLER_AXIS_RIGHTY)) {
-                    cur_val = 0;
+            } else {
+                for (const auto& controller : InputState.cur_controllers) {
+                    ret += process_controller(controller);
                 }
-                ret += std::clamp(cur_val, 0.0f, 1.0f);
             }
         }
 
@@ -580,7 +755,7 @@ float controller_axis_state(int32_t input_id, bool allow_suppression) {
     return 0.0f;
 }
 
-float recomp::get_input_analog(const recomp::InputField& field) {
+float recomp::get_input_analog(int port_index, const recomp::InputField& field) {
     switch ((InputType)field.input_type) {
     case InputType::Keyboard:
         if (InputState.keys && field.input_id >= 0 && field.input_id < InputState.numkeys) {
@@ -591,9 +766,9 @@ float recomp::get_input_analog(const recomp::InputField& field) {
         }
         return 0.0f;
     case InputType::ControllerDigital:
-        return controller_button_state(field.input_id) ? 1.0f : 0.0f;
+        return controller_button_state(port_index, field.input_id) ? 1.0f : 0.0f;
     case InputType::ControllerAnalog:
-        return controller_axis_state(field.input_id, true);
+        return controller_axis_state(port_index, field.input_id, true);
     case InputType::Mouse:
         // TODO mouse support
         return 0.0f;
@@ -604,15 +779,15 @@ float recomp::get_input_analog(const recomp::InputField& field) {
     return 0.0f;
 }
 
-float recomp::get_input_analog(const std::span<const recomp::InputField> fields) {
+float recomp::get_input_analog(int port_index, const std::span<const recomp::InputField> fields) {
     float ret = 0.0f;
     for (const auto& field : fields) {
-        ret += get_input_analog(field);
+        ret += get_input_analog(port_index, field);
     }
     return std::clamp(ret, 0.0f, 1.0f);
 }
 
-bool recomp::get_input_digital(const recomp::InputField& field) {
+bool recomp::get_input_digital(int port_index, const recomp::InputField& field) {
     switch ((InputType)field.input_type) {
     case InputType::Keyboard:
         if (InputState.keys && field.input_id >= 0 && field.input_id < InputState.numkeys) {
@@ -623,10 +798,10 @@ bool recomp::get_input_digital(const recomp::InputField& field) {
         }
         return false;
     case InputType::ControllerDigital:
-        return controller_button_state(field.input_id);
+        return controller_button_state(port_index, field.input_id);
     case InputType::ControllerAnalog:
         // TODO adjustable threshold
-        return controller_axis_state(field.input_id, true) >= axis_threshold;
+        return controller_axis_state(port_index, field.input_id, true) >= axis_threshold;
     case InputType::Mouse:
         // TODO mouse support
         return false;
@@ -637,10 +812,10 @@ bool recomp::get_input_digital(const recomp::InputField& field) {
     return false;
 }
 
-bool recomp::get_input_digital(const std::span<const recomp::InputField> fields) {
+bool recomp::get_input_digital(int port_index, const std::span<const recomp::InputField> fields) {
     bool ret = false;
     for (const auto& field : fields) {
-        ret |= get_input_digital(field);
+        ret |= get_input_digital(port_index, field);
     }
     return ret;
 }
@@ -696,11 +871,11 @@ void recomp::apply_joystick_deadzone(float x_in, float y_in, float* x_out, float
 
 void recomp::get_right_analog(float* x, float* y) {
     float x_val =
-        controller_axis_state((SDL_GameControllerAxis::SDL_CONTROLLER_AXIS_RIGHTX + 1), false) -
-        controller_axis_state(-(SDL_GameControllerAxis::SDL_CONTROLLER_AXIS_RIGHTX + 1), false);
+        controller_axis_state(-1, (SDL_GameControllerAxis::SDL_CONTROLLER_AXIS_RIGHTX + 1), false) -
+        controller_axis_state(-1, -(SDL_GameControllerAxis::SDL_CONTROLLER_AXIS_RIGHTX + 1), false);
     float y_val =
-        controller_axis_state((SDL_GameControllerAxis::SDL_CONTROLLER_AXIS_RIGHTY + 1), false) -
-        controller_axis_state(-(SDL_GameControllerAxis::SDL_CONTROLLER_AXIS_RIGHTY + 1), false);
+        controller_axis_state(-1, (SDL_GameControllerAxis::SDL_CONTROLLER_AXIS_RIGHTY + 1), false) -
+        controller_axis_state(-1, -(SDL_GameControllerAxis::SDL_CONTROLLER_AXIS_RIGHTY + 1), false);
     recomp::apply_joystick_deadzone(x_val, y_val, x, y);
 }
 

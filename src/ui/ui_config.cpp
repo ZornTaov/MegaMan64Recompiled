@@ -101,6 +101,7 @@ namespace recompui {
 
 // True if controller config menu is open, false if keyboard config menu is open, undefined otherwise
 bool configuring_controller = false;
+int configuring_port = 0;
 
 namespace {
 
@@ -114,7 +115,7 @@ std::string build_binding_hint(recomp::GameInput input, recomp::InputDevice devi
 	std::string ret{};
 
 	for (size_t binding_index = 0; binding_index < recomp::bindings_per_input; binding_index++) {
-		const std::string binding_text = recomp::get_input_binding(input, binding_index, device).to_string();
+		const std::string binding_text = recomp::get_input_binding(configuring_port, input, binding_index, device).to_string();
 		if (binding_text.empty()) {
 			continue;
 		}
@@ -203,7 +204,7 @@ int recomp::get_scanned_input_index() {
 }
 
 void recomp::finish_scanning_input(recomp::InputField scanned_field) {
-    recomp::set_input_binding(static_cast<recomp::GameInput>(scanned_input_index), scanned_binding_index, cur_device, scanned_field);
+    recomp::set_input_binding(configuring_port, static_cast<recomp::GameInput>(scanned_input_index), scanned_binding_index, cur_device, scanned_field);
 	scanned_input_index = -1;
 	scanned_binding_index = -1;
 	controls_model_handle.DirtyVariable("inputs");
@@ -707,6 +708,8 @@ public:
 		bind_option(constructor, "hr_option", &new_options.hr_option);
 		bind_option(constructor, "msaa_option", &new_options.msaa_option);
 		bind_option(constructor, "rr_option", &new_options.rr_option);
+		bind_option(constructor, "tf_option", &new_options.tf_option);
+		bind_option(constructor, "control_preset", &new_options.control_preset);
 		constructor.BindFunc("rr_manual_value",
 			[](Rml::Variant& out) {
 				out = new_options.rr_manual_value;
@@ -838,7 +841,7 @@ public:
 					return;
 				}
 				for (size_t binding_index = 0; binding_index < recomp::bindings_per_input; binding_index++) {
-                    recomp::set_input_binding(input, binding_index, cur_device, recomp::InputField{});
+                    recomp::set_input_binding(configuring_port, input, binding_index, cur_device, recomp::InputField{});
 				}
 				model_handle.DirtyVariable("inputs");
 				graphics_model_handle.DirtyVariable("gfx_help__apply");
@@ -851,6 +854,17 @@ public:
 				model_handle.DirtyVariable("inputs");
 				nav_help_model_handle.DirtyVariable("nav_help__accept");
 				nav_help_model_handle.DirtyVariable("nav_help__exit");
+			});
+
+		constructor.BindEventCallback("control_preset_changed",
+			[](Rml::DataModelHandle model_handle, Rml::Event& event, const Rml::VariantList& inputs) {
+				// Apply the selected control preset
+				ultramodern::renderer::ControlPreset preset = new_options.control_preset;
+				zelda64::apply_control_preset(preset);
+				model_handle.DirtyAllVariables();
+				nav_help_model_handle.DirtyVariable("nav_help__accept");
+				nav_help_model_handle.DirtyVariable("nav_help__exit");
+				graphics_model_handle.DirtyVariable("gfx_help__apply");
 			});
 
 		constructor.BindEventCallback("set_input_row_focus",
@@ -884,7 +898,7 @@ public:
 			virtual int Size(void* ptr) override { return recomp::bindings_per_input; }
 			virtual Rml::DataVariable Child(void* ptr, const Rml::DataAddressEntry& address) override {
                 recomp::GameInput input = static_cast<recomp::GameInput>((uintptr_t)ptr);
-				return Rml::DataVariable{&input_field_definition_instance, &recomp::get_input_binding(input, address.index, cur_device)};
+				return Rml::DataVariable{&input_field_definition_instance, &recomp::get_input_binding(configuring_port, input, address.index, cur_device)};
 			}
 		};
 		// Static instance of the InputField array variable definition to have a fixed pointer to return to RmlUi.
