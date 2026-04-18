@@ -600,21 +600,18 @@ void recomp::poll_inputs() {
 
     {
         std::lock_guard lock{ InputState.cur_controllers_mutex };
-        {
-            std::lock_guard lock{ InputState.cur_controllers_mutex };
-            InputState.cur_controllers.clear();
-            InputState.port_to_controller.fill(nullptr);
-            
-            // Get all connected controllers and map them to ports in order.
-            int num_joysticks = SDL_NumJoysticks();
-            int port_count = 0;
-            for (int i = 0; i < num_joysticks && port_count < 4; i++) {
-                if (SDL_IsGameController(i)) {
-                    SDL_GameController* controller = SDL_GameControllerOpen(i);
-                    if (controller) {
-                        InputState.cur_controllers.push_back(controller);
-                        InputState.port_to_controller[port_count++] = controller;
-                    }
+        InputState.cur_controllers.clear();
+        InputState.port_to_controller.fill(nullptr);
+        
+        // Get all connected controllers and map them to ports in order.
+        int num_joysticks = SDL_NumJoysticks();
+        int port_count = 0;
+        for (int i = 0; i < num_joysticks && port_count < 4; i++) {
+            if (SDL_IsGameController(i)) {
+                SDL_GameController* controller = SDL_GameControllerOpen(i);
+                if (controller) {
+                    InputState.cur_controllers.push_back(controller);
+                    InputState.port_to_controller[port_count++] = controller;
                 }
             }
         }

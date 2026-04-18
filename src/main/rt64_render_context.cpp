@@ -443,6 +443,11 @@ void zelda64::renderer::RT64Context::send_dl(const OSTask* task) {
 }
 
 void zelda64::renderer::RT64Context::update_screen(uint32_t vi_origin) {
+    static bool logged_first_screen_update = false;
+    if (!logged_first_screen_update) {
+        logged_first_screen_update = true;
+        trace_render_startup("runtime: first RT64 screen update");
+    }
     VI_ORIGIN_REG = vi_origin;
 
     app->updateScreen();

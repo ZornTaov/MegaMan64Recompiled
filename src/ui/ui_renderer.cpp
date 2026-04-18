@@ -1334,6 +1334,11 @@ void recompui::activate_mouse() {
 
 void draw_hook(RT64::RenderCommandList* command_list, RT64::RenderFramebuffer* swap_chain_framebuffer) {
     std::lock_guard lock {ui_context_mutex};
+    static bool logged_first_ui_frame = false;
+    if (!logged_first_ui_frame) {
+        logged_first_ui_frame = true;
+        trace_ui_render_startup("runtime: first UI frame prep");
+    }
 
     apply_background_input_mode();
 
